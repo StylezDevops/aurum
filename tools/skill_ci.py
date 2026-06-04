@@ -287,4 +287,21 @@ def skill_ci_gate(skill_dir: Path) -> Optional[str]:
         return None
     if res.ok:
         return None
+    # Record the block as a Black Box postmortem so the skill-review fork can turn
+    # the failure into a durable fix. Best-effort: never let logging break the gate.
+    try:
+        from agent.black_box import record_postmortem
+
+        record_postmortem(
+            "skill_ci",
+            title=f"Skill-CI blocked {Path(skill_dir).name} at {res.phase}",
+            summary=res.detail,
+            severity="high" if res.phase == "scan" else "medium",
+            lesson_hint=(
+                "A self-authored skill failed validation before promotion. "
+                "Capture the corrected approach so the next attempt passes."
+            ),
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("Black Box record failed for Skill-CI block", exc_info=True)
     return f"Skill-CI blocked this skill ({res.phase}): {res.detail}"
