@@ -107,6 +107,9 @@ def main() -> int:
     # unlike stock Hermes we do not leave this opt-in. See skill_manager_tool
     # ._guard_agent_created_enabled.
     env["AURUM_GUARD_SKILLS"] = "1"
+    # Validate-before-promote: run a skill's tests in a hardened subprocess on
+    # write (Skill-CI / Regression Guard). See tools/skill_ci.py.
+    env["AURUM_SKILL_CI"] = "1"
 
     cwd = GROUP_DIR if os.path.isdir(GROUP_DIR) else "/opt/hermes"
     # No timeout here — nanoclaw owns the wall-clock timeout and kills the container.

@@ -107,6 +107,16 @@ def _security_scan_skill(skill_dir: Path) -> Optional[str]:
             return f"Security scan blocked this skill ({reason}):\n{report}"
     except Exception as e:
         logger.warning("Security scan failed for %s: %s", skill_dir, e, exc_info=True)
+    # Skill-CI / Regression Guard: validate-before-promote. Runs only inside the
+    # cage (AURUM_SKILL_CI=1) and only after the static scan above is clean —
+    # executes the skill's tests in a hardened subprocess. No-op on the host.
+    try:
+        from tools.skill_ci import skill_ci_gate
+        ci_error = skill_ci_gate(skill_dir)
+        if ci_error:
+            return ci_error
+    except Exception as e:
+        logger.warning("Skill-CI gate failed for %s: %s", skill_dir, e, exc_info=True)
     return None
 
 import yaml
