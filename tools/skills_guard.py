@@ -22,6 +22,7 @@ Usage:
         print(format_scan_report(result))
 """
 
+import ast
 import re
 import fnmatch
 import hashlib
@@ -520,11 +521,15 @@ MAX_FILE_COUNT = 50       # skills shouldn't have 50+ files
 MAX_TOTAL_SIZE_KB = 1024  # 1MB total is suspicious for a skill
 MAX_SINGLE_FILE_KB = 256  # individual file > 256KB is suspicious
 
-# File extensions to scan (text files only — skip binary)
+# File extensions to scan (text files only — skip binary). Executable/script
+# types are included deliberately: a skill's test/build files are the npm-2018
+# supply-chain vector (payload runs at pytest collection / install hook time),
+# so they must reach scan_file rather than be skipped on suffix.
 SCANNABLE_EXTENSIONS = {
-    '.md', '.txt', '.py', '.sh', '.bash', '.js', '.ts', '.rb',
-    '.yaml', '.yml', '.json', '.toml', '.cfg', '.ini', '.conf',
+    '.md', '.txt', '.py', '.sh', '.bash', '.zsh', '.js', '.mjs', '.cjs',
+    '.ts', '.rb', '.yaml', '.yml', '.json', '.toml', '.cfg', '.ini', '.conf',
     '.html', '.css', '.xml', '.tex', '.r', '.jl', '.pl', '.php',
+    '.ps1', '.psm1', '.bat', '.cmd',
 }
 
 # Known binary extensions that should NOT be in a skill
@@ -553,6 +558,125 @@ INVISIBLE_CHARS = {
     '\u2068',  # first strong isolate
     '\u2069',  # pop directional isolate
 }
+
+
+# ---------------------------------------------------------------------------
+# §3a supply-chain defense: force-scanned paths + import-time side-effect AST
+#
+# The event-stream/npm-2018 pattern ported to skills: the payload hides in a
+# file reviewers skim and tooling runs — for skills, a test file (pytest executes
+# module-level code at *collection* time, and Skill-CI would run it to validate).
+# Two defenses live here:
+#   1. Executable/test paths can NEVER be hidden by a skill's .skillignore.
+#   2. Dangerous calls at import/collection scope in .py files are flagged
+#      CRITICAL (→ dangerous verdict → blocked, including agent-authored skills).
+# ---------------------------------------------------------------------------
+
+# Suffixes that always reach the scanner regardless of .skillignore.
+_FORCE_SCAN_SUFFIXES = {
+    '.py', '.sh', '.bash', '.zsh', '.js', '.mjs', '.cjs', '.ts',
+    '.rb', '.pl', '.php', '.ps1', '.psm1', '.bat', '.cmd', '.r', '.jl',
+}
+# Filenames that always reach the scanner (build/test/packaging hooks that run
+# code at install or collection time).
+_FORCE_SCAN_NAMES = {
+    'conftest.py', 'setup.py', 'setup.cfg', 'pyproject.toml', 'tox.ini',
+    'noxfile.py', 'Makefile', 'makefile', 'GNUmakefile', 'package.json',
+}
+# Directory segments whose contents always reach the scanner.
+_FORCE_SCAN_DIRS = {'tests', 'test', '__tests__', 'scripts', 'bin', '.github'}
+
+
+def _is_force_scanned(rel_posix: str) -> bool:
+    """True if a path must always be scanned — .skillignore cannot hide it.
+
+    Covers executable/script suffixes, build/test/packaging hook filenames, and
+    anything under a tests/scripts/bin/.github directory. Ignore files may only
+    hide documentation and media, never code that can execute.
+    """
+    p = Path(rel_posix)
+    if p.name in _FORCE_SCAN_NAMES:
+        return True
+    if p.suffix.lower() in _FORCE_SCAN_SUFFIXES:
+        return True
+    segments = rel_posix.split('/')[:-1]  # directory components only
+    return any(seg in _FORCE_SCAN_DIRS for seg in segments)
+
+
+# Bare builtins whose call executes/loads arbitrary code.
+_IMPORT_TIME_DANGEROUS_BUILTINS = {'eval', 'exec', 'compile', '__import__'}
+# Whole modules where any call at import time is suspicious in a skill.
+_IMPORT_TIME_DANGEROUS_MODULES = {'subprocess', 'socket', 'pty', 'ctypes', 'requests', 'httpx'}
+# Specific module.attr calls that are dangerous at import time.
+_IMPORT_TIME_DANGEROUS_ATTRS = {
+    ('os', 'system'), ('os', 'popen'), ('os', 'spawnv'), ('os', 'spawnl'),
+    ('os', 'execv'), ('os', 'execve'), ('os', 'execvp'), ('os', 'fork'),
+    ('urllib', 'urlopen'), ('webbrowser', 'open'),
+}
+
+
+def _import_time_calls(tree: ast.AST):
+    """Yield ast.Call nodes that execute at import/collection time.
+
+    Descends through control flow that runs at import (module body, If/Try/With/
+    For/While) but NOT into FunctionDef/AsyncFunctionDef/ClassDef bodies, whose
+    code only runs when later called/instantiated. This is the precise notion of
+    "runs when pytest imports the module" that line-based regex cannot express.
+    """
+    def visit(node: ast.AST):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue  # body runs on call/instantiation, not at import
+            if isinstance(child, ast.Call):
+                yield child
+            yield from visit(child)
+
+    yield from visit(tree)
+
+
+def _danger_label(call: ast.Call):
+    """Return a short label if a Call targets a dangerous primitive, else None."""
+    func = call.func
+    if isinstance(func, ast.Name) and func.id in _IMPORT_TIME_DANGEROUS_BUILTINS:
+        return func.id
+    if isinstance(func, ast.Attribute):
+        root = func.value
+        if isinstance(root, ast.Name):
+            if root.id in _IMPORT_TIME_DANGEROUS_MODULES:
+                return f"{root.id}.{func.attr}"
+            if (root.id, func.attr) in _IMPORT_TIME_DANGEROUS_ATTRS:
+                return f"{root.id}.{func.attr}"
+    return None
+
+
+def _scan_python_import_scope(content: str, rel_path: str) -> List["Finding"]:
+    """Flag dangerous calls that run at import/collection time in a .py file.
+
+    Returns CRITICAL findings (→ dangerous verdict → blocked) so a payload that
+    would detonate when pytest collects a test module is rejected before promotion.
+    Syntax errors yield no findings here (the regex pass still applies).
+    """
+    findings: List[Finding] = []
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError):
+        return findings
+    for call in _import_time_calls(tree):
+        label = _danger_label(call)
+        if label:
+            findings.append(Finding(
+                pattern_id="import_time_sideeffect",
+                severity="critical",
+                category="execution",
+                file=rel_path,
+                line=getattr(call, "lineno", 0),
+                match=f"module-level {label}(...)",
+                description=(
+                    "dangerous call executes at import/collection time "
+                    "(pytest runs this when collecting the module — supply-chain vector)"
+                ),
+            ))
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -620,6 +744,11 @@ def scan_file(file_path: Path, rel_path: str = "") -> List[Finding]:
                     description=f"invisible unicode character {char_name} (possible text hiding/injection)",
                 ))
                 break  # one finding per line for invisible chars
+
+    # §3a: import-time side-effect analysis for Python (regex is line-scoped and
+    # cannot tell module scope from inside a function — ast can).
+    if file_path.suffix.lower() == ".py":
+        findings.extend(_scan_python_import_scope(content, rel_path))
 
     return findings
 
@@ -992,6 +1121,11 @@ def _load_skill_ignore(skill_dir: Path):
         base = rel_posix.split("/")[-1]
 
         if base in _NEVER_IGNORABLE:
+            return False
+        # §3a: an attacker-supplied ignore file must not be able to exclude its
+        # own executable/test code from the scan. Force-scanned paths win over
+        # every pattern; .skillignore may only hide docs/media.
+        if _is_force_scanned(rel_posix):
             return False
         if base in _ALWAYS_IGNORED_NAMES:
             return True

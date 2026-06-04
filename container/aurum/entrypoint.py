@@ -102,6 +102,11 @@ def main() -> int:
     env = dict(os.environ)
     env["HERMES_HOME"] = HERMES_HOME
     env["HERMES_INTERACTIVE"] = "0"
+    # Secure-by-default in the cage: scan self-authored skills on every write
+    # (Policy Kernel / skills_guard). A persisted skill can detonate later, so
+    # unlike stock Hermes we do not leave this opt-in. See skill_manager_tool
+    # ._guard_agent_created_enabled.
+    env["AURUM_GUARD_SKILLS"] = "1"
 
     cwd = GROUP_DIR if os.path.isdir(GROUP_DIR) else "/opt/hermes"
     # No timeout here — nanoclaw owns the wall-clock timeout and kills the container.

@@ -63,7 +63,15 @@ def _guard_agent_created_enabled() -> bool:
     paths via terminal() with no gate, so the scan adds friction without
     meaningful security.  Users who want belt-and-suspenders can turn it
     on via `hermes config set skills.guard_agent_created true`.
+
+    Aurum cage exception: inside the ephemeral container the threat model
+    differs — a self-authored skill *persists* and may detonate later (e.g.
+    when Skill-CI runs its tests), so scanning is secure-by-default there.
+    The container entrypoint sets AURUM_GUARD_SKILLS=1; stock Hermes keeps
+    the opt-in config default, so upstream behavior is unchanged.
     """
+    if os.environ.get("AURUM_GUARD_SKILLS") == "1":
+        return True
     try:
         from hermes_cli.config import load_config
         cfg = load_config()
