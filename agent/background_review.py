@@ -581,6 +581,19 @@ def spawn_background_review_thread(
     else:
         prompt = getattr(agent, "_SKILL_REVIEW_PROMPT", _SKILL_REVIEW_PROMPT)
 
+    # Black Box: when a skill review fires, surface recent recorded failures so
+    # the fork can turn them into durable fixes. Additive and best-effort — never
+    # let it break review spawning, and contribute nothing when there are none.
+    if review_skills:
+        try:
+            from agent.black_box import build_failure_review_addendum
+
+            addendum = build_failure_review_addendum()
+            if addendum:
+                prompt = prompt + addendum
+        except Exception:
+            logger.debug("Black Box review addendum unavailable", exc_info=True)
+
     def _target() -> None:
         _run_review_in_thread(agent, messages_snapshot, prompt)
 
