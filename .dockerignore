@@ -26,6 +26,9 @@ ui-tui/packages/hermes-ink/dist/
 .env
 
 *.md
+# …except the Aurum constitution, which must ship in the image so the entrypoint
+# can seed it into each group's HERMES_HOME/SOUL.md (Hermes' identity slot).
+!container/aurum/SOUL.md
 
 # Runtime data (bind-mounted at /opt/data; must not leak into build context)
 data/
