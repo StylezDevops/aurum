@@ -19,7 +19,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Runtime deps the agent's core tools expect: ripgrep (Grep tool), git, curl, CA certs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git ripgrep \
+        ca-certificates curl git ripgrep util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/hermes
@@ -38,7 +38,10 @@ RUN touch README.md
 
 # Install Hermes core only (no --extra all / no torch) — matches the verified
 # local baseline (cli.py -q answered through OpenRouter with just these deps).
-RUN pip install -e .
+# pytest is added so Skill-CI (tools/skill_ci.py) can run a skill's tests in a
+# hardened subprocess before promotion (validate-before-promote). util-linux
+# provides `unshare` for best-effort network isolation of those test runs.
+RUN pip install -e . pytest==9.0.2
 
 # nanoclaw runs the container as the host UID (--user uid:gid) with HOME=/home/node
 # on Linux, or as image-default root on native Windows. Make a world-writable home
