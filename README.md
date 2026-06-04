@@ -14,6 +14,10 @@ ephemeral, network-restricted Docker cage. It can learn skills, diagnose its own
 and author its own tools — and every one of those self-modifying paths is gated, sandboxed,
 fail-closed, and tested. Capability and governance grow on the same rails.
 
+Its central mechanism: **execution authority is a live, computed runtime variable**, not a
+static on/off permission tier — and each capability the agent gains is withheld until the
+structural controls that govern it are in place.
+
 > **Controlled autonomy, not maximal autonomy.** The market optimises capability; the
 > documented production failures are elsewhere — governance, drift, recovery, observability.
 > Aurum treats governance as the operating system, not a layer sprinkled on top.
@@ -96,8 +100,17 @@ The governance-first organs that make the headline claim, grouped by tier:
   Breaker, Shadow Mode, Cost Governor, Resource Scheduler, Sensorium), observability monitors
   (identity-drift, memory-poisoning, concentration), and deferred multi-agent orchestration.
 
-Each carries a build-confidence label (HIGH / PARTIAL / HARDEST) — an honest expectation,
-not a promise that all organs are equally achievable.
+**The headline organs — the actual contribution:** Authority Governor (live runtime
+authority), Evidence Ledger + Reproducibility Runner (versioned, replayable decision
+provenance), Knowledge Validity Engine (knowledge that expires), Living Specification (gated
+self-rewrite of the constitution), and Outcome Interpreter (completion ≠ satisfaction).
+Together: explain *why* it changed, show *what* changed, replay the old behaviour, adjust how
+much it's trusted right now, and notice when stored knowledge went stale. API Archaeologist
+and the Verifier Panel are *supporting* machinery — how the agent grows and checks itself
+inside the governed envelope, not the reason the architecture is interesting.
+
+Each organ carries a build-confidence label (HIGH / PARTIAL / HARDEST) — an honest
+expectation, not a promise that all organs are equally achievable.
 
 ---
 
