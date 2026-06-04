@@ -561,7 +561,7 @@ INVISIBLE_CHARS = {
 
 
 # ---------------------------------------------------------------------------
-# §3a supply-chain defense: force-scanned paths + import-time side-effect AST
+# Supply-chain defense: force-scanned paths + import-time side-effect AST
 #
 # The event-stream/npm-2018 pattern ported to skills: the payload hides in a
 # file reviewers skim and tooling runs — for skills, a test file (pytest executes
@@ -745,7 +745,7 @@ def scan_file(file_path: Path, rel_path: str = "") -> List[Finding]:
                 ))
                 break  # one finding per line for invisible chars
 
-    # §3a: import-time side-effect analysis for Python (regex is line-scoped and
+    # Supply-chain: import-time side-effect analysis for Python (regex is line-scoped and
     # cannot tell module scope from inside a function — ast can).
     if file_path.suffix.lower() == ".py":
         findings.extend(_scan_python_import_scope(content, rel_path))
@@ -1122,7 +1122,7 @@ def _load_skill_ignore(skill_dir: Path):
 
         if base in _NEVER_IGNORABLE:
             return False
-        # §3a: an attacker-supplied ignore file must not be able to exclude its
+        # Supply-chain: an attacker-supplied ignore file must not be able to exclude its
         # own executable/test code from the scan. Force-scanned paths win over
         # every pattern; .skillignore may only hide docs/media.
         if _is_force_scanned(rel_posix):

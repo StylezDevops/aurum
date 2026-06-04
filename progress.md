@@ -22,7 +22,7 @@ actual built `aurum-agent:latest` image. Only **live-test / OAuth** work remains
 | # | Organ | Capability it adds | The guardrail that makes it safe | Commit | Tests |
 |---|---|---|---|---|---|
 | 1 | **SOUL.md constitution** | Stable identity + 6 always-on directives, seeded per-group | Lean, name-agnostic (`{{ASSISTANT_NAME}}`), references guardrails rather than inlining them (no prompt bloat) | `c143e15` | live |
-| 2 | **Policy Kernel (§3a supply-chain)** | — | `.skillignore` can't hide test/exec code; stdlib-`ast` flags import-time payloads as CRITICAL; secure-by-default in the cage | `515c7dc` | 19 |
+| 2 | **Policy Kernel (supply-chain)** | — | `.skillignore` can't hide test/exec code; stdlib-`ast` flags import-time payloads as CRITICAL; secure-by-default in the cage | `515c7dc` | 19 |
 | 3 | **Skill-CI / Regression Guard** | Validates skills before they go live | Fail-closed: never runs a skill the scanner flagged; tests run in a hardened, secret-scrubbed, network-dropped sandbox | `e8e30c6` | 11 |
 | 4 | **Black Box** | Turns its own failures into durable fixes | Redacted postmortems; feeds the skill-review fork; transient infra noise filtered out | `9ea1340` | 16 |
 | 5 | **Toolsmith** | The agent can **author new tools** | Propose → scan → sandbox-test → **staged for human review; never auto-activates** | `ceb124a` | 10 |
@@ -44,7 +44,7 @@ dependency (the "headroom hung 19 min" failure mode is absent by construction).
 | `container/aurum/entrypoint.py` | seeds SOUL.md per-group; sets `AURUM_GUARD_SKILLS` / `AURUM_SKILL_CI` / `AURUM_TOOLSMITH=1` |
 | `container/aurum/Dockerfile` | COPY SOUL.md; add `pytest` + `util-linux` for Skill-CI |
 | `.dockerignore` | `!container/aurum/SOUL.md` negation |
-| `tools/skills_guard.py` | §3a: `_is_force_scanned`, `ast` import-time detector, wider scannable suffixes |
+| `tools/skills_guard.py` | supply-chain: `_is_force_scanned`, `ast` import-time detector, wider scannable suffixes |
 | `tools/skill_manager_tool.py` | secure-by-default gate; chains Skill-CI; imports Toolsmith to register it |
 | `tools/skill_ci.py` | **new** — validate-before-promote + shared `run_sandboxed_tests` |
 | `agent/black_box.py` | **new** — postmortem store + redaction + review addendum |

@@ -1,4 +1,4 @@
-"""Supply-chain defenses for skills_guard (self-ability-map.md §3a).
+"""Supply-chain defenses for skills_guard.
 
 These tests lock the npm-2018 / event-stream attack surface ported to skills:
 a payload hidden in a test/build file that a reviewer skims and tooling runs at

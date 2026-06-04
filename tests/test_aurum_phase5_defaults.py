@@ -1,6 +1,6 @@
 """Aurum Phase 5 — memory + native compression on by default, per-group, no flaky dep.
 
-Reuse-first decision (self-ability-map / nanoclaw CLAUDE.md): Aurum uses Hermes'
+Reuse-first decision: Aurum uses Hermes'
 NATIVE memory and context compressor. Both are on by default and rooted at
 ``HERMES_HOME``, which the cage mounts per-group, so persistence across the
 ephemeral ``--rm`` container is already handled by the existing mount. We

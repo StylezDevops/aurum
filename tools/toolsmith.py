@@ -64,7 +64,7 @@ def _staging_root(hermes_home: Optional[Path] = None) -> Path:
 def _scan_dir(staging: Path) -> tuple[str, List[str]]:
     """Static-scan every .py under the staging dir; return (verdict, finding strs).
 
-    Reuses the Policy Kernel scanner — including the §3a import-time side-effect
+    Reuses the Policy Kernel scanner — including the import-time side-effect
     detector, which correctly flags dangerous *module-level* code without
     penalising normal tool bodies (functions that call subprocess/network are
     fine; running them at import time is not).

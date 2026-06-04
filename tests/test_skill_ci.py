@@ -1,4 +1,4 @@
-"""Skill-CI / Regression Guard tests (self-ability-map.md §3 + §3a).
+"""Skill-CI / Regression Guard tests.
 
 Safety invariant for THIS test file: we never detonate a real payload on the dev
 host. The malicious-skill case asserts Skill-CI fails closed at the *scan* phase

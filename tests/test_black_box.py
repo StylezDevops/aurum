@@ -1,4 +1,4 @@
-"""Black Box tests (self-ability-map.md gap #1: failure → postmortem → skill)."""
+"""Black Box tests: failure → structured postmortem → skill signal."""
 
 from pathlib import Path
 
