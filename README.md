@@ -40,6 +40,9 @@ Channels (Telegram / Gmail / …) ── thin secure launcher (host)
 - The **hard containment boundary** is the cage: a `--rm` container holding no long-lived
   secrets, with controlled egress and an allowlist as the *only* place host-folder access is
   granted. Everything Aurum does to itself happens inside it.
+- **Containment scales with autonomy** — plain Docker shares the host kernel, so as the agent
+  is trusted to run less-supervised the cage tightens toward rootless/microVM/kernel-isolation.
+  More authority granted ⇒ stronger isolation required.
 - Per-group state (memory, learned skills, postmortems, compression state) persists on the
   host across the ephemeral container so nothing is lost when it exits.
 
@@ -52,10 +55,11 @@ before its own errors compound, judges *outcomes* not just *completion*, governs
 authority in real time, and rewrites its own operating identity **under human approval** —
 getting more capable and more constrained at once.
 
-Every promote / persist / policy-change / spec-revision path terminates at a **human gate**.
-Generated and learned artifacts run caged until reviewed; secrets are redacted from every
-persisted record; ingested external content is data, never instructions. Absence shrinks the
-agent, never grows it.
+Every promote / persist / policy-change / spec-revision path terminates at a **human gate**,
+which is class-tiered so the human is never the throughput bottleneck and **fails closed** when
+the owner is absent. Generated and learned artifacts run caged until reviewed; secrets are
+redacted from every persisted record; ingested external content is data, never instructions.
+Absence shrinks the agent, never grows it.
 
 ---
 
@@ -68,8 +72,8 @@ rest is the active roadmap.
 
 | Organ | What it does | Guardrail |
 |-------|--------------|-----------|
-| **Constitution** (`SOUL.md`) | Identity + always-on directives, seeded per-group | Lean, references guardrails rather than inlining them |
-| **Policy Kernel** | Skill-content security scanning | Supply-chain `§3a` defenses: `.skillignore` can't hide test/exec code; AST flags import-time payloads; secure-by-default in the cage |
+| **Constitution** (`SOUL.md`) | Identity + always-on directives, seeded per-group | Lean; references guardrails rather than inlining them |
+| **Policy Kernel** | Skill-content security scanning | Supply-chain defenses: `.skillignore` can't hide test/exec code; an AST check flags code that runs at import time; secure-by-default in the cage |
 | **Skill-CI / Regression Guard** | Validate-before-promote | Fail-closed: never runs a skill the scanner flagged; tests run in a hardened, secret-scrubbed, network-dropped sandbox |
 | **Black Box** | Failure → structured postmortem → skill | Redacted on-disk corpus; feeds the learning loop; never hot-path |
 | **Toolsmith** | The agent authors real tools | Propose → scan → sandbox-test → **staged for human review; never auto-activated** |
@@ -80,19 +84,42 @@ rest is the active roadmap.
 The governance-first organs that make the headline claim, grouped by tier:
 
 - **Tier 0.5 — durability & scaling:** Evidence Ledger (hash-chained, replayable decision
-  provenance), Reproducibility Runner, Memory Garbage Collector, Knowledge Validity Engine
-  (stored knowledge expires), Goal Registry, Preference Model, Tool Capability Manager.
-- **Tier 1 — novel core:** API Archaeologist (gap → discover API → synthesise tool, extension-
-  first), Living Specification (gated self-rewrite of the constitution), Heterogeneous Verifier
-  Panel (cross-model checking), Epistemic Governor (reroute before errors compound), Causal
-  Simulator (counterfactuals over its own state), Authority Governor (live trust dial),
-  Outcome Interpreter (completion ≠ satisfaction).
+  provenance — built first; nearly everything logs here), Reproducibility Runner, Memory
+  Garbage Collector, Knowledge Validity Engine (stored knowledge expires), Goal Registry,
+  Preference Model, Tool Capability Manager.
+- **Tier 1 — novel core:** API Archaeologist (gap → discover API → synthesise tool,
+  extension-first), Living Specification (gated self-rewrite of the constitution),
+  Heterogeneous Verifier Panel (cross-model checking), Epistemic Governor (reroute before
+  errors compound), Causal Simulator (counterfactuals over its own state), Authority Governor
+  (live trust dial), Outcome Interpreter (completion ≠ satisfaction).
 - **Tier 2–4:** cross-domain extensions, known support patterns (Trust Ladder, Circuit
-  Breaker, Shadow Mode, Cost Governor, Sensorium), observability (drift / poisoning /
-  concentration monitors), and deferred multi-agent orchestration.
+  Breaker, Shadow Mode, Cost Governor, Resource Scheduler, Sensorium), observability monitors
+  (identity-drift, memory-poisoning, concentration), and deferred multi-agent orchestration.
 
 Each carries a build-confidence label (HIGH / PARTIAL / HARDEST) — an honest expectation,
 not a promise that all organs are equally achievable.
+
+---
+
+## Runtime substrate & hardening
+
+The organs are only as strong as the runtime they sit on. Four substrate properties are
+security-load-bearing and harden the cage the built organs already assume:
+
+- **The cage** — build/test/discovery run in an ephemeral `docker run --rm` with least-
+  privilege, mostly read-only mounts and an explicit allowlist. Isolation strength rises with
+  granted autonomy (rootless → microVM/gVisor) rather than staying fixed.
+- **Secret injection** — credentials arrive per-request over a gateway and are never baked
+  into the container or its filesystem. A full compromise of the runtime leaks no durable
+  credential, because none is resident.
+- **Signed persisted state** — host-mounted state (memory, postmortems, the constitution) is
+  re-ingested across restarts, so it is signed on write and verified on reload. State that
+  fails verification is quarantined as untrusted data, not ingested as trusted history —
+  closing the self-poisoning vector.
+- **Sandbox runtime confinement** — static scanning can't catch `eval`/`exec`/base64-decoded
+  imports, so the skill-testing sandbox blocks dynamic-exec builtins and host-reaching modules
+  (`subprocess`, raw sockets, `os` beyond an allowlist) at runtime. Static scan **and** runtime
+  confinement; neither alone.
 
 ---
 

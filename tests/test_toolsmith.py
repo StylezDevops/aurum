@@ -1,4 +1,4 @@
-"""Toolsmith tests (self-ability-map.md §3: governed tool authoring lifecycle).
+"""Toolsmith tests: governed tool authoring lifecycle.
 
 Safety invariant: a proposed tool is scanned and tested but NEVER auto-activated.
 The dangerous-tool case is blocked at the *scan* phase (its code is never run);

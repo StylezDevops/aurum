@@ -1,4 +1,4 @@
-"""Skill-CI / Regression Guard — validate-before-promote (self-ability-map §3 + §3a).
+"""Skill-CI / Regression Guard — validate-before-promote.
 
 Before a self-authored or installed skill goes live, Skill-CI enforces two gates:
 
@@ -146,7 +146,7 @@ def _build_runner_cmd(target: Path) -> List[str]:
 
     Prefer pytest (full regression). If pytest is not importable, fall back to a
     collection-only import of each test module — which still detonates any
-    import/collection-time payload (the §3a vector) inside the sandbox, without
+    import/collection-time payload (the supply-chain vector) inside the sandbox, without
     asserting test outcomes.
     """
     import importlib.util
