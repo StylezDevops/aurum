@@ -1050,3 +1050,8 @@ registry.register(
         absorbed_into=args.get("absorbed_into")),
     emoji="📝",
 )
+
+# Importing the Toolsmith here registers its (cage-gated) propose_tool tool. This
+# module is already loaded at startup, so it's a reliable, low-cost trigger; the
+# import itself has no heavy side effects (toolsmith defers its own imports).
+import tools.toolsmith  # noqa: E402,F401

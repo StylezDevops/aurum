@@ -110,6 +110,10 @@ def main() -> int:
     # Validate-before-promote: run a skill's tests in a hardened subprocess on
     # write (Skill-CI / Regression Guard). See tools/skill_ci.py.
     env["AURUM_SKILL_CI"] = "1"
+    # Offer the Toolsmith (propose_tool) in the cage. It can only stage a scanned,
+    # sandbox-tested proposal for human review — never activate a tool. See
+    # tools/toolsmith.py.
+    env["AURUM_TOOLSMITH"] = "1"
 
     cwd = GROUP_DIR if os.path.isdir(GROUP_DIR) else "/opt/hermes"
     # No timeout here — nanoclaw owns the wall-clock timeout and kills the container.

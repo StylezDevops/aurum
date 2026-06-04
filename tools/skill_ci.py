@@ -230,19 +230,52 @@ def run_skill_ci(
                    else "scan clean; execution disabled",
         )
 
+    ran = run_sandboxed_tests(
+        skill_dir, timeout=timeout, require_network_isolation=require_network_isolation,
+    )
+    return SkillCIResult(
+        ok=ran.ok, phase="test", verdict=verdict, detail=ran.detail,
+        tests_ran=ran.tests_ran, network_isolated=ran.network_isolated,
+    )
+
+
+@dataclass
+class SandboxRun:
+    """Outcome of running a directory's tests in the hardened subprocess."""
+
+    ok: bool
+    detail: str
+    tests_ran: bool = False
+    network_isolated: bool = False
+
+
+def run_sandboxed_tests(
+    test_dir: Path,
+    *,
+    timeout: int = DEFAULT_TIMEOUT,
+    require_network_isolation: bool = False,
+) -> SandboxRun:
+    """Run a directory's pytest suite in the hardened subprocess.
+
+    Shared by Skill-CI and the Toolsmith. The directory is copied to an ephemeral
+    workdir (no writeback); the child runs with a secret-scrubbed environment, a
+    wall-clock timeout, an output cap, and best-effort network isolation via
+    ``unshare -rn`` (degrades gracefully). Callers must perform their own static
+    scan FIRST — this function executes code and must never be the only gate.
+    """
+    test_dir = Path(test_dir)
     net_prefix = _network_sandbox_prefix()
     if require_network_isolation and net_prefix is None:
-        return SkillCIResult(
-            ok=False, phase="test", verdict=verdict,
+        return SandboxRun(
+            ok=False,
             detail="network isolation required but unavailable (no usable unshare); "
                    "refusing to execute tests unconfined",
         )
 
-    # Copy to an ephemeral workdir so tests cannot mutate the real skills tree.
-    tmp_root = Path(tempfile.mkdtemp(prefix="skillci_"))
+    tmp_root = Path(tempfile.mkdtemp(prefix="sandboxci_"))
     try:
-        work = tmp_root / skill_dir.name
-        shutil.copytree(skill_dir, work)
+        work = tmp_root / test_dir.name
+        shutil.copytree(test_dir, work)
         cmd = (net_prefix or []) + _build_runner_cmd(work)
         env = _scrubbed_env()
         try:
@@ -251,8 +284,8 @@ def run_skill_ci(
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired:
-            return SkillCIResult(
-                ok=False, phase="test", verdict=verdict,
+            return SandboxRun(
+                ok=False,
                 detail=f"tests exceeded {timeout}s wall-clock limit (possible hang)",
                 tests_ran=True, network_isolated=net_prefix is not None,
             )
@@ -261,8 +294,8 @@ def run_skill_ci(
         # pytest: 0 = passed, 5 = no tests collected (treat as pass). Anything
         # else (incl. the import-detonate runner's non-zero) is a failure.
         ok = proc.returncode in (0, 5)
-        return SkillCIResult(
-            ok=ok, phase="test", verdict=verdict,
+        return SandboxRun(
+            ok=ok,
             detail=("tests passed" if ok else f"tests failed (exit {proc.returncode})\n{out[-2000:]}"),
             tests_ran=True, network_isolated=net_prefix is not None,
         )
