@@ -20,4 +20,6 @@ GATES: Dict[str, Tuple[List[str], str]] = {
     "AURUM_ERR_010": (["AG"], "Authority flapping: AG oscillating 0.81/0.79 holds a stable band (dual thresholds + dwell)."),
     "AURUM_ERR_011": (["EL"], "EL fail-safe: with EL.append failing, a consequential action is blocked rather than executed unlogged."),
     "AURUM_ERR_012": (["PK", "AG"], "Owner absence: past gate TTL with no approver, Class-B/C expire to denied, growth pauses, authority never widens."),
+    # 013-020 reserved for the arbitration layer (aurum_arbitration_spec.md), not yet wired.
+    "AURUM_ERR_021": (["CAGE"], "Mount jail: a caged turn cannot mount or reach a host path outside the allowlist — deny-by-default; symlink, traversal, and string-prefix escapes are refused (fail closed)."),
 }
