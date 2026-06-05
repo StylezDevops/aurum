@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# =============================================================================
+# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/pk.py (PK).
+# Still RUNS in the container today as the live supply-chain guard, but this is a
+# DONOR: migrate its logic INTO the scaffold PK organ; do NOT extend it here as if
+# it were the organ. A future session builds PK in the scaffold, not in this file.
+# build_state.BUILT['PK'] stays False until that scaffold organ is spec-complete.
+# (Spine reconciliation: scaffold is canonical -- Option B.)
+# =============================================================================
 """
 Skills Guard — Security scanner for externally-sourced skills.
 

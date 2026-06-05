@@ -1,3 +1,10 @@
+# =============================================================================
+# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/pk.py (PK).
+# Skill-CI is part of the PK spine. Still RUNS in the container today, but this is a
+# DONOR: migrate its logic INTO the scaffold PK organ; do NOT extend it here as if it
+# were the organ. build_state.BUILT['PK'] stays False until that organ is spec-complete.
+# (Spine reconciliation: scaffold is canonical -- Option B.)
+# =============================================================================
 """Skill-CI / Regression Guard — validate-before-promote.
 
 Before a self-authored or installed skill goes live, Skill-CI enforces two gates:
