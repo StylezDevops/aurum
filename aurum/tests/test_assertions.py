@@ -215,6 +215,114 @@ def test_AURUM_ERR_012_owner_absence():
     raise NotImplementedError("AURUM_ERR_012 body: implement once PK+AG are built")
 
 
+# --- arbitration layer (013-020) ------------------------------------------
+def _ca():
+    import os, tempfile
+    from aurum.arbitration.ca import ConflictArbiter
+    return ConflictArbiter(os.path.join(tempfile.mkdtemp(), "ca.db"))
+
+
+def _sig(name, directive, justification=None, constitutional=False):
+    basis = {} if justification is None else {"justification": justification}
+    return {"signal": name, "directive": directive, "basis": basis,
+            "constitutional": constitutional}
+
+
+def _seed_conflicts(ca, justifications, constitutional=False):
+    for j in justifications:  # AG contracts, OI proceeds -> a logged contraction
+        ca.arbitrate({"action_id": "a", "capability_class": "code_edit"},
+                     [_sig("AG", "contract", j, constitutional), _sig("OI", "proceed")])
+
+
+def test_AURUM_ERR_013_arbiter_determinism():
+    _gate("AURUM_ERR_013")
+    ca = _ca()
+    sigs = [_sig("AG", "contract", 0.9), _sig("OI", "proceed")]
+    r1 = ca.arbitrate({"action_id": "a", "capability_class": "c"}, sigs)
+    r2 = ca.arbitrate({"action_id": "a", "capability_class": "c"}, sigs)
+    assert r1["resolution"] == r2["resolution"] == "contract"
+    assert r1["winner"] == r2["winner"] == "AG"
+    assert r1["record"]["participants"] == r2["record"]["participants"]
+
+
+def test_AURUM_ERR_014_caution_wins_logged():
+    _gate("AURUM_ERR_014")
+    ca = _ca()
+    out = ca.arbitrate({"action_id": "a", "capability_class": "c"},
+                       [_sig("AG", "contract", 0.8), _sig("OI", "proceed"),
+                        _sig("LS", "proceed")])
+    assert out["resolution"] == "contract" and out["winner"] == "AG"
+    rec = ca.conflicts()[-1]
+    assert {p["signal"] for p in rec["participants"]} == {"AG", "OI", "LS"}
+
+
+def test_AURUM_ERR_015_hard_layer_not_arbitrated():
+    _gate("AURUM_ERR_015")
+    from aurum.arbitration.ca import ArbitrationError
+    ca = _ca()
+    raised = False
+    try:
+        ca.arbitrate({"action_id": "a", "pk_deny": True},
+                     [_sig("AG", "contract", 0.5), _sig("OI", "proceed")])
+    except ArbitrationError:
+        raised = True
+    assert raised, "CA arbitrated a PK-denied action"
+
+
+def test_AURUM_ERR_016_silent_contraction_forbidden():
+    _gate("AURUM_ERR_016")
+    ca = _ca()
+    before = len(ca.conflicts())
+    ca.arbitrate({"action_id": "a", "capability_class": "c"},
+                 [_sig("AG", "contract", 0.5), _sig("OI", "proceed")])
+    assert len(ca.conflicts()) == before + 1, "contraction wrote no ConflictRecord"
+
+
+def test_AURUM_ERR_017_wise_caution_vs_deadlock():
+    _gate("AURUM_ERR_017")
+    from aurum.arbitration.dd import DeadlockDetector
+    # wise caution: justification stays elevated -> D below flag
+    ca_wise = _ca()
+    _seed_conflicts(ca_wise, [0.9] * 6)
+    assert DeadlockDetector(ca=ca_wise).scan() == []
+    # deadlock: justification abates while resolution stays contract -> flag + 1 escalation
+    ca_dl = _ca()
+    _seed_conflicts(ca_dl, [0.9, 0.8, 0.6, 0.4, 0.2, 0.1])
+    esc = DeadlockDetector(ca=ca_dl).scan()
+    assert len(esc) == 1
+
+
+def test_AURUM_ERR_018_constitutional_exclusion():
+    _gate("AURUM_ERR_018")
+    from aurum.arbitration.dd import DeadlockDetector
+    ca = _ca()
+    # justification abated (would look like deadlock) BUT winner is constitutional
+    _seed_conflicts(ca, [0.9, 0.7, 0.5, 0.3, 0.1, 0.05], constitutional=True)
+    assert DeadlockDetector(ca=ca).scan() == [], "constitutional contraction flagged"
+
+
+def test_AURUM_ERR_019_dd_never_self_resolves():
+    _gate("AURUM_ERR_019")
+    from aurum.arbitration.dd import DeadlockDetector
+    dd = DeadlockDetector()
+    raised = False
+    try:
+        dd.set_parameters({"d_flag": 0.99})  # auto-retune attempt, no human gate
+    except PermissionError:
+        raised = True
+    assert raised, "DD allowed auto-retune of its constitutional parameters"
+
+
+def test_AURUM_ERR_020_escalation_dedup():
+    _gate("AURUM_ERR_020")
+    from aurum.arbitration.dd import DeadlockDetector
+    ca = _ca()
+    _seed_conflicts(ca, [0.9, 0.7, 0.5, 0.3, 0.1, 0.05])
+    dd = DeadlockDetector(ca=ca)
+    dd.scan(); dd.scan(); esc = dd.scan()  # three re-runs of the same deadlock
+    assert len(esc) == 1 and esc[0]["recurrences"] >= 2  # one item, growing weight
+
+
 def test_AURUM_ERR_021_mount_jail():
     _gate("AURUM_ERR_021")
     # LIVE (needs only CAGE). The mount jail is the cage's host-fs containment
