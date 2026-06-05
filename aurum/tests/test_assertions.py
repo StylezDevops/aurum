@@ -172,3 +172,40 @@ def test_AURUM_ERR_012_owner_absence():
     # TODO(opus): advance past gate TTL with no approver; assert Class-B/C pending
     # expire to denied, growth paths pause, and authority does not widen.
     raise NotImplementedError("AURUM_ERR_012 body: implement once PK+AG are built")
+
+
+def test_AURUM_ERR_021_mount_jail():
+    _gate("AURUM_ERR_021")
+    # LIVE (needs only CAGE). The mount jail is the cage's host-fs containment
+    # boundary; assert it denies-by-default and fails closed on escape attempts.
+    import os, tempfile
+    from aurum.cage.mount_jail import MountJail, MountDenied
+
+    allow = os.path.realpath(tempfile.mkdtemp())
+    outside = os.path.realpath(tempfile.mkdtemp())
+    jail = MountJail([allow])
+
+    inside = os.path.join(allow, "sub")
+    os.makedirs(inside, exist_ok=True)
+
+    # R2: inside an allowlisted root is permitted; an unrelated dir is not.
+    assert jail.is_allowed(inside) is True
+    assert jail.is_allowed(outside) is False
+    # R4: a string-prefix sibling is NOT contained (/allow must not authorise /allow-evil).
+    assert jail.is_allowed(allow + "-evil") is False
+    # R1: an empty allowlist denies everything (deny-by-default).
+    assert MountJail([]).is_allowed(inside) is False
+    # R5: build_mounts FAILS CLOSED on a disallowed extra (not silently dropped).
+    raised = False
+    try:
+        jail.build_mounts(allow, allow, {"x": outside})
+    except MountDenied:
+        raised = True
+    assert raised, "mount jail did not fail closed on a disallowed extra mount"
+    # R6: a non-absolute source is refused.
+    raised = False
+    try:
+        jail.validate_extra("relative/path")
+    except MountDenied:
+        raised = True
+    assert raised, "mount jail accepted a non-absolute mount source"
