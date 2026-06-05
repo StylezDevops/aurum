@@ -102,9 +102,29 @@ def test_AURUM_ERR_004_constitutional_shield():
 
 def test_AURUM_ERR_005_independence_decoupling():
     _gate("AURUM_ERR_005")
-    # TODO(opus): configure roster [gpt-5, gpt-5-mini] (same family); assert a
-    # high_stakes route fails closed with a min_families violation.
-    raise NotImplementedError("AURUM_ERR_005 body: implement once HVP is built")
+    # LIVE now (needs only HVP). A high-stakes check rostered with two same-family
+    # models (gpt-5 + gpt-5-mini) must FAIL CLOSED on a min_families violation rather
+    # than silently verifying with correlated verifiers.
+    import pytest as _pytest
+    from aurum.novel.hvp import HeterogeneousVerifierPanel, HVPRoutingError
+
+    hvp = HeterogeneousVerifierPanel()
+    hvp.configure([
+        {"id": "a", "base_url": "u", "api_key_ref": "k", "model": "gpt-5",
+         "family": "gpt", "provider": "openai", "trust_tier": 3, "cost_class": 3,
+         "sees_sensitive": True},
+        {"id": "b", "base_url": "u", "api_key_ref": "k", "model": "gpt-5-mini",
+         "family": "gpt", "provider": "openai", "trust_tier": 2, "cost_class": 1,
+         "sees_sensitive": True},
+    ])
+    raised = False
+    try:
+        hvp.route({"payload_hash": "h", "is_sensitive": False,
+                   "stakes": "high_stakes", "required_aspects": ["correct"]})
+    except HVPRoutingError as e:
+        raised = True
+        assert "min_families" in str(e)
+    assert raised, "same-family roster did not fail closed on a high-stakes route"
 
 
 def test_AURUM_ERR_006_growth_isolation():
