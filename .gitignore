@@ -4,6 +4,16 @@
 *.pyc*
 __pycache__/
 .venv/
+
+# Internal reference / planning docs — us-only, never tracked
+aurum_organs_spec.md
+aurum_arbitration_spec.md
+aurum_LS_design.md
+aurum_build_sprints.md
+aurum/aurum_organs_spec.md
+BUILDPROMPT.TXT
+AurumExplained.md
+CURRENT_PROJECT_STATUS.md
 .vscode/
 .env
 .env.local
