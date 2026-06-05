@@ -22,7 +22,7 @@ BUILT: dict[str, bool] = {
     # Tier 2 extensions
     "SDG": False, "SM": False,
     # Tier 3 support
-    "TL": False, "CB": True, "SH": False, "CG": False, "RS": False, "SEN": False,
+    "TL": False, "CB": True, "SH": False, "CG": True, "RS": False, "SEN": False,
     # Tier 3.5 observability — DERIVED VIEWS over EL, not first-class organs
     "IDM": True, "MPD": True, "CC": False,
     # Tier 4 deferred (stays False — documented boundary, not built in v1)
