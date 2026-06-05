@@ -24,7 +24,7 @@ BUILT: dict[str, bool] = {
     # Tier 3 support
     "TL": False, "CB": True, "SH": False, "CG": False, "RS": False, "SEN": False,
     # Tier 3.5 observability — DERIVED VIEWS over EL, not first-class organs
-    "IDM": False, "MPD": False, "CC": False,
+    "IDM": True, "MPD": True, "CC": False,
     # Tier 4 deferred (stays False — documented boundary, not built in v1)
     "AO": False,
     # Deployment substrate (not an organ) — the cage's host-mount containment
