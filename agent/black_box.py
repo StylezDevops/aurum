@@ -1,3 +1,10 @@
+# =============================================================================
+# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/bb.py (BB).
+# Still RUNS in the container today, but this is a DONOR: migrate its logic INTO the
+# scaffold BB organ; do NOT extend it here as if it were the organ. A future session
+# builds BB in the scaffold, not in this file. build_state.BUILT['BB'] stays False
+# until that scaffold organ is spec-complete. (Spine reconciliation: Option B.)
+# =============================================================================
 """Black Box — failure recorder that turns mistakes into structured postmortems.
 
 Closes gap #1 of the self-ability map: the background review fires on *learning*
