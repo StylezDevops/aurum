@@ -160,6 +160,9 @@ skills loop, Curator, tools, MCP, cron, subagents, multi-provider model routing,
 terminal/gateway surfaces. Aurum adds the cage, the governance spine, and the organ
 architecture on top. Upstream remains tracked as the `upstream` remote for merges.
 
+On Windows, install the underlying Hermes runtime with the PowerShell installer:
+`scripts/install.ps1`.
+
 ## Repository map
 
 | Path | Purpose |
