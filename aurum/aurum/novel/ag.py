@@ -1,15 +1,21 @@
 """AG — Authority Governor. Authority as a live, damped control variable.
 
-Computes current authority from TL/EG/HVP/CB/OI. Maps to bands with hysteresis
-(dual promote/demote thresholds + dwell). Recovery kinetics: falls fast, rises
-slowly, floor prevents collapse, gain capped per window. PK enforces the ceiling;
-AG never grants.
+Makes execution authority a runtime SCALAR (not a fixed tier) computed from live signals
+(TL tier, EG uncertainty, HVP pass rate, CB freeze, OI outcome trend). The scalar maps to
+bands via HYSTERESIS — each boundary has separate promote/demote thresholds plus a promotion
+dwell time — so an authority hovering near a line (0.81/0.79/...) does NOT flap the band
+(AURUM_ERR_010). RECOVERY KINETICS damp the OI↔AG feedback loop: authority falls fast
+(safety, no dwell), rises slowly and rate-limited (earn it back), and never collapses below a
+FLOOR (escape the death spiral).
+
+AG is READ-ONLY over its inputs and never grants — it computes a ceiling that PK enforces.
+`observe()` is the per-cycle update tick; `set_authority()` is the kinetics-free primitive it
+builds on (and the substrate for the hysteresis tests). Authority changes are logged to EL.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
-from ..base import unbuilt
 from ..types import AuthorityBand
 
 
@@ -20,20 +26,131 @@ class Kinetics(TypedDict):
     max_gain_per_window: float
 
 
+# bands high -> low: (name, promote_at, demote_at). advisory is the floor band.
+_BANDS: List[Tuple[str, float, float]] = [
+    ("full", 0.95, 0.90),
+    ("code", 0.80, 0.70),
+    ("readonly", 0.60, 0.50),
+    ("advisory", 0.0, 0.0),
+]
+_RANK = {name: i for i, (name, _, _) in enumerate(reversed(_BANDS))}  # advisory=0..full=3
+# action_class -> the minimum band it requires
+_ACTION_BAND = {"commit_outward": "full", "code_edit": "code", "propose": "readonly",
+                "advise": "advisory"}
+
+
+def _clamp01(x: float) -> float:
+    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else float(x)
+
+
 class AuthorityGovernor:
     ORGAN = "AG"
 
+    def __init__(self, el: Any = None, max_tl_tier: int = 3,
+                 kinetics: Optional[Kinetics] = None, dwell_seconds: float = 60.0) -> None:
+        self._el = el
+        self.max_tl_tier = max_tl_tier
+        self.dwell_seconds = dwell_seconds
+        self._k: Kinetics = kinetics or {"rise_rate": 0.05, "fall_rate": 1.0,
+                                         "floor": 0.1, "max_gain_per_window": 0.2}
+        self._authority: Dict[str, float] = {}
+        self._band_idx: Dict[str, int] = {}     # index into _BANDS (0=full)
+        self._last_promote: Dict[str, float] = {}
+        self._signals: Dict[str, Dict[str, Any]] = {}
+
+    # -- reads --------------------------------------------------------------
     def authority(self, capability_class: str) -> float:
-        raise unbuilt(self.ORGAN, "authority")
+        return self._authority.get(capability_class, self._k["floor"])
 
     def band(self, capability_class: str) -> AuthorityBand:
-        raise unbuilt(self.ORGAN, "band")
+        idx = self._band_idx.get(capability_class, len(_BANDS) - 1)
+        return _BANDS[idx][0]  # type: ignore[return-value]
 
     def permits(self, action: Any) -> bool:
-        raise unbuilt(self.ORGAN, "permits")
+        """True iff the current band for the action's class clears the band the action
+        requires. AG computes the ceiling; PK is what actually enforces it."""
+        cc = action.get("capability_class", "default")
+        required = action.get("required_band") \
+            or _ACTION_BAND.get(action.get("action_class", "advise"), "advisory")
+        return _RANK[self.band(cc)] >= _RANK[required]
 
     def explain(self, capability_class: str) -> Dict[str, Any]:
-        raise unbuilt(self.ORGAN, "explain")
+        sig = self._signals.get(capability_class, {})
+        return {"authority": self.authority(capability_class),
+                "band": self.band(capability_class), "signals": sig,
+                "contributions": self._contributions(sig)}
 
     def kinetics(self) -> Kinetics:
-        raise unbuilt(self.ORGAN, "kinetics")
+        return dict(self._k)  # type: ignore[return-value]
+
+    # -- update tick --------------------------------------------------------
+    def observe(self, capability_class: str, signals: Dict[str, Any],
+                now: Optional[float] = None) -> float:
+        """Compute a target authority from live signals and move toward it under the
+        recovery kinetics (fast fall, slow rate-limited rise, floor). Returns new authority."""
+        self._signals[capability_class] = signals
+        target = self._target(signals)
+        cur = self.authority(capability_class)
+        if target < cur:
+            new = max(self._k["floor"], cur - min(cur - target, self._k["fall_rate"]))
+        else:
+            gain = min(target - cur, self._k["rise_rate"], self._k["max_gain_per_window"])
+            new = cur + gain
+        self.set_authority(capability_class, new, now)
+        return self.authority(capability_class)
+
+    def set_authority(self, capability_class: str, value: float,
+                      now: Optional[float] = None) -> None:
+        """Kinetics-free authority set + band re-evaluation with hysteresis/dwell."""
+        value = max(self._k["floor"], _clamp01(value))
+        prev = self._authority.get(capability_class)
+        self._authority[capability_class] = value
+        self._update_band(capability_class, value, now)
+        if prev != value:
+            self._audit(capability_class, value)
+
+    # -- internals ----------------------------------------------------------
+    def _target(self, s: Dict[str, Any]) -> float:
+        c = self._contributions(s)
+        base = sum(c.values()) / len(c) if c else 0.0
+        if s.get("cb_frozen"):
+            base = min(base, 0.3)  # a CB freeze demotes growth authority
+        return _clamp01(base)
+
+    def _contributions(self, s: Dict[str, Any]) -> Dict[str, float]:
+        return {
+            "tl": _clamp01(s.get("tl_tier", 0) / self.max_tl_tier),
+            "eg": _clamp01(1.0 - s.get("eg_uncertainty", 0.0)),
+            "hvp": _clamp01(s.get("hvp_pass_rate", 1.0)),
+            "oi": _clamp01(s.get("oi_trend", 1.0)),
+        }
+
+    def _update_band(self, cc: str, authority: float, now: Optional[float]) -> None:
+        idx = self._band_idx.get(cc, len(_BANDS) - 1)
+        # demotion: immediate, no dwell (safety reactions stay instant)
+        while idx < len(_BANDS) - 1 and authority < _BANDS[idx][2]:
+            idx += 1
+        # promotion: a single promotion EVENT (gated once by dwell) may raise one or
+        # more bands; demotion above already ran without dwell.
+        if idx > 0 and authority >= _BANDS[idx - 1][1]:
+            t = 0.0 if now is None else now
+            last = self._last_promote.get(cc)
+            dwell_ok = (now is None or self.dwell_seconds <= 0 or last is None
+                        or (t - last) >= self.dwell_seconds)
+            if dwell_ok:
+                while idx > 0 and authority >= _BANDS[idx - 1][1]:
+                    idx -= 1
+                self._last_promote[cc] = t
+        self._band_idx[cc] = idx
+
+    def _audit(self, cc: str, authority: float) -> None:
+        if self._el is None:
+            return
+        self._el.append({
+            "event_id": "", "timestamp": "", "source_organ": "AG",
+            "action_type": "TRUST_CHANGE", "object_ids": [cc],
+            "payload": {"capability_class": cc, "authority": authority,
+                        "band": self.band(cc),
+                        "contributions": self._contributions(self._signals.get(cc, {}))},
+            "evidence_confidence": 1.0, "evidence_source": "AG",
+            "prev_hash": "", "hash": ""})
