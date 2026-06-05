@@ -157,9 +157,18 @@ def test_AURUM_ERR_009_refusal_persistence_padding_resistant():
 
 def test_AURUM_ERR_010_authority_flapping():
     _gate("AURUM_ERR_010")
-    # TODO(opus): drive AG authority 0.81/0.79/0.81/0.79; assert the band stays
-    # stable (dual promote/demote thresholds + promotion dwell time).
-    raise NotImplementedError("AURUM_ERR_010 body: implement once AG is built")
+    # LIVE now (needs only AG). An authority oscillating 0.81/0.79/0.81/0.79 must hold
+    # a STABLE band — dual promote(0.80)/demote(0.70) thresholds mean it never re-crosses.
+    from aurum.novel.ag import AuthorityGovernor
+
+    ag = AuthorityGovernor(dwell_seconds=0.0)
+    cc = "code_edit"
+    ag.set_authority(cc, 0.81)
+    stable = ag.band(cc)
+    assert stable == "code"
+    for v in (0.79, 0.81, 0.79, 0.81, 0.79):
+        ag.set_authority(cc, v)
+        assert ag.band(cc) == stable, f"band flapped at authority {v}: {ag.band(cc)}"
 
 
 def test_AURUM_ERR_011_el_fail_safe():
