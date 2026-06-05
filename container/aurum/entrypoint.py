@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Aurum entrypoint shim — the seam between nanoclaw's cage and the Hermes brain.
+"""Aurum entrypoint — the seam between the cage broker and the Hermes brain.
 
-nanoclaw spawns this container per message with:
-  * stdin: one JSON ContainerInput  {prompt, sessionId?, groupFolder, chatJid,
-           isMain, isScheduledTask?, assistantName?, script?}
-  * env:   ANTHROPIC_BASE_URL, ANTHROPIC_MODEL, ANTHROPIC_AUTH_TOKEN (OpenRouter)
-  * mounts: /workspace/group (RW, persistent), /workspace/project (RO, main),
-            /workspace/extra/* (allowlisted), /workspace/ipc (RW)
+The Aurum cage broker (`aurum.cage.broker`) spawns this container per turn with:
+  * stdin: one JSON ContainerInput  {prompt, sessionId?, groupFolder, isMain,
+           assistantName?, secrets?}
+           — SECRETS arrive on STDIN, never via `-e`/argv, so they never appear in
+             `docker inspect`. We inject them into the in-container process env here.
+  * env:   ANTHROPIC_BASE_URL, ANTHROPIC_MODEL (non-secret config only)
+  * mounts: /workspace/group (RW, persistent), /workspace/project (RO),
+            /workspace/extra/* (allowlisted, jailed by `aurum.cage.mount_jail`)
 
-and stream-parses stdout for ContainerOutput JSON wrapped in sentinel markers:
-  ---NANOCLAW_OUTPUT_START---
+and the broker stream-parses stdout for ContainerOutput JSON wrapped in sentinels:
+  ---AURUM_OUTPUT_START---
   {"status": "...", "result": "...", "newSessionId": "...", "error": "..."}
-  ---NANOCLAW_OUTPUT_END---
+  ---AURUM_OUTPUT_END---
 
-This shim translates that contract to a single-shot `hermes -q` call and back.
-Verified Hermes contract (docs/hermes-io-contract.md): in --quiet mode stdout is
-the answer text followed by a trailing `session_id: <id>` line; API errors print
-on the answer line and the process still exits 0, so we detect error-shaped text.
+This translates that contract to a single-shot `hermes -q` call and back. Verified
+Hermes contract (docs/hermes-io-contract.md): in --quiet mode stdout is the answer
+text followed by a trailing `session_id: <id>` line; API errors print on the answer
+line and the process still exits 0, so we detect error-shaped text.
 """
 import json
 import os
@@ -28,8 +30,8 @@ import sys
 # contain these, so stripping them is safe and de-noises the result.
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
-START = "---NANOCLAW_OUTPUT_START---"
-END = "---NANOCLAW_OUTPUT_END---"
+START = "---AURUM_OUTPUT_START---"
+END = "---AURUM_OUTPUT_END---"
 HERMES_CLI = "/opt/hermes/cli.py"
 GROUP_DIR = "/workspace/group"
 # Persist Hermes session/state under the per-group RW mount so --resume works
@@ -82,13 +84,18 @@ def main() -> int:
 
     prompt = inp.get("prompt", "") or ""
     session_id = inp.get("sessionId")
+    # Secrets arrive on stdin (never via docker -e), so they stay out of
+    # `docker inspect`. Injected into the in-container env for hermes + tools below.
+    secrets = inp.get("secrets") or {}
 
     os.makedirs(HERMES_HOME, exist_ok=True)
     _seed_soul(HERMES_HOME, inp.get("assistantName"))
 
     cmd = [sys.executable, HERMES_CLI, "-q", prompt, "--provider", "openrouter", "--quiet"]
     base_url = os.environ.get("ANTHROPIC_BASE_URL")
-    api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    api_key = (secrets.get("ANTHROPIC_AUTH_TOKEN")
+               or secrets.get("OPENROUTER_API_KEY")
+               or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
     model = os.environ.get("ANTHROPIC_MODEL")
     if base_url:
         cmd += ["--base-url", base_url]
@@ -100,6 +107,11 @@ def main() -> int:
         cmd += ["--resume", session_id]
 
     env = dict(os.environ)
+    # Inject stdin-brokered secrets into the runtime env (NOT visible in docker
+    # inspect, which only shows the `-e` config set at `docker run`).
+    for _k, _v in secrets.items():
+        if _v:
+            env[str(_k)] = str(_v)
     env["HERMES_HOME"] = HERMES_HOME
     env["HERMES_INTERACTIVE"] = "0"
     # Secure-by-default in the cage: scan self-authored skills on every write
