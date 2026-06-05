@@ -5,15 +5,23 @@
 > tools — and every self-modifying path is gated, sandboxed, fail-closed, and tested.
 > Capability and governance grow on the same rails.
 
-_Last updated: 2026-06-04_
+_Last updated: 2026-06-05_
 
 ---
 
 ## Status at a glance
 
-Everything **code-completable** is done to production grade: **6 commits** on `aurum` `main`
-(`c143e15`→`f3b2e43`, unpushed), **61 new tests green**, each organ verified inside the
-actual built `aurum-agent:latest` image. Only **live-test / OAuth** work remains.
+**2026-06-05 — organ scaffold, Evidence Ledger, and the cage are merged to `main` (pushed,
+green).** The typed organ scaffold (`aurum/aurum/`, 28 organs + EL & CS reference impls + the
+AURUM_ERR compliance harness), the hash-chained Evidence Ledger with governance-evidence
+tables, and the per-request **cage** (an OpenAI-compatible SSE broker that runs each turn in an
+ephemeral `docker run --rm` behind Hermes' gateway proxy seam, with a mount-allowlist jail) all
+landed. `nanoclaw` was retired in favour of Hermes' native gateway + the cage. Home dir moves to
+`~/.aurum` via the `HERMES_HOME` override (see `docs/aurum-home.md`). Scaffold+cage suite: **89
+tests green**; Hermes' inherited suite stays green. Live Telegram round-trip + OAuth remain.
+
+**2026-06-04 — the governed self-ability spine (below)** shipped: **6 commits**, **61 tests**,
+each organ verified inside the built `aurum-agent:latest` image.
 
 ---
 
