@@ -27,6 +27,9 @@ BUILT: dict[str, bool] = {
     "IDM": False, "MPD": False, "CC": False,
     # Tier 4 deferred (stays False — documented boundary, not built in v1)
     "AO": False,
+    # Deployment substrate (not an organ) — the cage's host-mount containment
+    # boundary. True once the mount jail exists; arms AURUM_ERR_021.
+    "CAGE": True,
 }
 
 
