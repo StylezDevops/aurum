@@ -62,9 +62,21 @@ def test_AURUM_ERR_001_crypto_continuity():
     el._db.execute("UPDATE evidence_ledger SET payload='{\"tampered\":1}' WHERE seq=1")
     assert el.verify_chain() is False, "verify_chain failed to detect tampering"
 
-    # CB lockout half — wire when CB is built:
-    #   from aurum.support.cb import CircuitBreaker
-    #   cb = CircuitBreaker(); ... assert cb trips into lockout on chain break.
+    # CB lockout half: a detected chain break must trip CB into emergency LOCKOUT,
+    # and that lockout persists until a HUMAN_GATE reset (denials persist by intent).
+    from aurum.support.cb import CircuitBreaker
+
+    cb = CircuitBreaker(os.path.join(tempfile.mkdtemp(), "cb001.db"), el=el)
+    assert cb.state() == "closed"
+    if not el.verify_chain():
+        cb.trip({"kind": "integrity", "detail": "EL.verify_chain() failed"})
+    assert cb.state() == "lockout", "CB did not enter lockout on EL chain break"
+    # Lockout halts ALL capability growth, system-wide...
+    assert cb.is_frozen("API_Synthesis") is True
+    # ...and only a HUMAN_GATE reset clears it.
+    cb.reset()
+    assert cb.state() == "closed"
+    assert cb.is_frozen("API_Synthesis") is False
 
 
 def test_AURUM_ERR_002_lossless_snapshot():
