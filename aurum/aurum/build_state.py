@@ -27,6 +27,9 @@ BUILT: dict[str, bool] = {
     "IDM": True, "MPD": True, "CC": False,
     # Tier 4 deferred (stays False — documented boundary, not built in v1)
     "AO": False,
+    # Arbitration layer (MECHANISMS, not organs) — CA synchronous, DD asynchronous.
+    # Arms AURUM_ERR_013–020.
+    "CA": True, "DD": True,
     # Deployment substrate (not an organ) — the cage's host-mount containment
     # boundary. True once the mount jail exists; arms AURUM_ERR_021.
     "CAGE": True,
