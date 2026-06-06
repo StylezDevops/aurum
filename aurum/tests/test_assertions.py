@@ -95,9 +95,24 @@ def test_AURUM_ERR_003_ghost_dependency():
 
 def test_AURUM_ERR_004_constitutional_shield():
     _gate("AURUM_ERR_004")
-    # TODO(opus): craft an LS revision targeting a CORE rule; assert it is rejected
-    # pre-gate (never enqueued for HUMAN_GATE).
-    raise NotImplementedError("AURUM_ERR_004 body: implement once LS is built")
+    # LIVE now (needs only LS). A revision targeting a CORE rule is rejected PRE-gate —
+    # it must never become an applyable revision.
+    import os, tempfile
+    from aurum.novel.ls import LivingSpecification
+
+    ls = LivingSpecification(os.path.join(tempfile.mkdtemp(), "ls.db"))
+    core_id = ls.add_rule({"region": "core", "text": "never weaken guardrails"})
+    rev = ls.propose_revision(rule_id=core_id, kind="retire")
+    assert rev.get("rejected") is True and rev.get("reason") == "core_unproposable"
+    # and even a hand-forged core revision cannot be applied
+    raised = False
+    try:
+        ls.apply_revision({"region": "core", "complexity_delta": 0,
+                           "diff": {"op": "retire", "rule_id": core_id}},
+                          approved_by="owner")
+    except ValueError:
+        raised = True
+    assert raised, "a CORE revision was applyable"
 
 
 def test_AURUM_ERR_005_independence_decoupling():
