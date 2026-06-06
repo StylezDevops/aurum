@@ -111,3 +111,59 @@ def test_promotion_respects_dwell():
     assert ag.band("c") != "full"          # held by dwell
     ag.set_authority("c", 0.97, now=200.0)  # dwell satisfied
     assert ag.band("c") == "full"
+
+
+# -- environment provenance (structural; recorded, NOT acted on) -----------
+def test_earned_in_empty_then_records_environment():
+    ag = _ag()
+    assert ag.earned_in("c") == []
+    ag.set_authority("c", 0.85, environment="dev")
+    assert ag.earned_in("c") == ["dev"]
+
+
+def test_earned_in_accumulates_deduped_and_ordered():
+    ag = _ag()
+    ag.set_authority("c", 0.85, environment="dev")
+    ag.set_authority("c", 0.86, environment="dev")   # dup -> not repeated
+    ag.set_authority("c", 0.84, environment="qa")
+    ag.set_authority("c", 0.83, environment="uat")
+    assert ag.earned_in("c") == ["dev", "qa", "uat"]
+
+
+def test_default_environment_is_unknown_never_prod():
+    """Fail-safe: unresolved provenance is 'unknown', never silently 'prod'."""
+    ag = _ag()
+    ag.set_authority("c", 0.8)              # no environment
+    assert ag.earned_in("c") == ["unknown"]
+    assert "prod" not in ag.earned_in("c")
+
+
+def test_environment_does_not_change_authority_value_or_band():
+    """GUARDRAIL: environment is provenance metadata, NOT an input to the frozen
+    scoring. Identical signals must produce identical authority + band regardless of
+    the environment tag."""
+    signals = {"tl_tier": 3, "eg_uncertainty": 0.2, "hvp_pass_rate": 0.9, "oi_trend": 0.9}
+    a_none = _ag(); a_dev = _ag(); a_prod = _ag()
+    v_none = a_none.observe("c", dict(signals))
+    v_dev = a_dev.observe("c", dict(signals), environment="dev")
+    v_prod = a_prod.observe("c", dict(signals), environment="prod")
+    assert v_none == v_dev == v_prod
+    assert a_none.band("c") == a_dev.band("c") == a_prod.band("c")
+
+
+def test_provenance_logged_to_el():
+    el = EvidenceLedger(os.path.join(tempfile.mkdtemp(), "el.db"))
+    ag = AuthorityGovernor(dwell_seconds=0.0, el=el)
+    ag.set_authority("c", 0.85, environment="uat")
+    rows = el.query({"source_organ": "AG"})
+    assert rows
+    payload = rows[0]["payload"]
+    assert payload["environment"] == "uat"
+    assert payload["earned_in"] == ["uat"]
+
+
+def test_explain_exposes_earned_in():
+    ag = _ag()
+    ag.observe("c", {"tl_tier": 3, "eg_uncertainty": 0.1, "hvp_pass_rate": 1.0,
+                     "oi_trend": 1.0}, environment="qa")
+    assert ag.explain("c")["earned_in"] == ["qa"]
