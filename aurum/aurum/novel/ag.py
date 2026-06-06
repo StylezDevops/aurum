@@ -57,6 +57,13 @@ class AuthorityGovernor:
         self._band_idx: Dict[str, int] = {}     # index into _BANDS (0=full)
         self._last_promote: Dict[str, float] = {}
         self._signals: Dict[str, Dict[str, Any]] = {}
+        # Environment provenance (structural, 2026-06-06): which evidence domains
+        # contributed authority for a class. RECORDED + EXPOSED, NOT YET ACTED ON —
+        # environment is metadata on the authority record, never an input to the
+        # scoring (that per-environment computation is the deferred ALM/calibration
+        # work). Plumbed in now so the dev-vs-prod distinction is recoverable from the
+        # first authority record instead of retrofitted onto a provenance-blind scalar.
+        self._earned_in: Dict[str, List[str]] = {}  # capability_class -> ordered uniq envs
 
     # -- reads --------------------------------------------------------------
     def authority(self, capability_class: str) -> float:
@@ -78,16 +85,31 @@ class AuthorityGovernor:
         sig = self._signals.get(capability_class, {})
         return {"authority": self.authority(capability_class),
                 "band": self.band(capability_class), "signals": sig,
-                "contributions": self._contributions(sig)}
+                "contributions": self._contributions(sig),
+                "earned_in": self.earned_in(capability_class)}
+
+    def earned_in(self, capability_class: str) -> List[str]:
+        """Provenance: the environments that have contributed authority for this class.
+
+        RECORDED, NOT YET ACTED ON. v1 tags authority with its environment and stores
+        it; it does NOT change the computed authority based on environment (that — the
+        prod-resets-to-floor / per-environment value — is the ALM/calibration work).
+        Per-environment keyed authority (`authority(class, env)`) is deferred; this read
+        is the provenance plumbing so the distinction is recoverable later.
+        """
+        return list(self._earned_in.get(capability_class, []))
 
     def kinetics(self) -> Kinetics:
         return dict(self._k)  # type: ignore[return-value]
 
     # -- update tick --------------------------------------------------------
     def observe(self, capability_class: str, signals: Dict[str, Any],
-                now: Optional[float] = None) -> float:
+                now: Optional[float] = None, environment: Optional[str] = None) -> float:
         """Compute a target authority from live signals and move toward it under the
-        recovery kinetics (fast fall, slow rate-limited rise, floor). Returns new authority."""
+        recovery kinetics (fast fall, slow rate-limited rise, floor). Returns new authority.
+
+        `environment` is PROVENANCE ONLY — it tags which evidence domain this update came
+        from; it does NOT enter the scoring (target/kinetics are unchanged by it)."""
         self._signals[capability_class] = signals
         target = self._target(signals)
         cur = self.authority(capability_class)
@@ -96,18 +118,37 @@ class AuthorityGovernor:
         else:
             gain = min(target - cur, self._k["rise_rate"], self._k["max_gain_per_window"])
             new = cur + gain
-        self.set_authority(capability_class, new, now)
+        self.set_authority(capability_class, new, now, environment=environment)
         return self.authority(capability_class)
 
     def set_authority(self, capability_class: str, value: float,
-                      now: Optional[float] = None) -> None:
-        """Kinetics-free authority set + band re-evaluation with hysteresis/dwell."""
+                      now: Optional[float] = None,
+                      environment: Optional[str] = None) -> None:
+        """Kinetics-free authority set + band re-evaluation with hysteresis/dwell.
+
+        `environment` is recorded as provenance (NEVER affects `value` or the band —
+        that's the frozen scoring). Unresolved provenance is recorded as 'unknown',
+        never silently 'prod' (fail-safe: unknown should be treated as LESS trusted)."""
+        env = self._resolve_env(environment)
         value = max(self._k["floor"], _clamp01(value))
         prev = self._authority.get(capability_class)
         self._authority[capability_class] = value
         self._update_band(capability_class, value, now)
+        self._record_env(capability_class, env)
         if prev != value:
-            self._audit(capability_class, value)
+            self._audit(capability_class, value, env)
+
+    # -- provenance helpers (additive; never touch scoring) -----------------
+    @staticmethod
+    def _resolve_env(environment: Optional[str]) -> str:
+        # Fail-safe direction: unresolved provenance is 'unknown', NEVER 'prod'.
+        # Unknown provenance should later be treated as LESS trusted, not more.
+        return environment if environment else "unknown"
+
+    def _record_env(self, capability_class: str, env: str) -> None:
+        lst = self._earned_in.setdefault(capability_class, [])
+        if env not in lst:
+            lst.append(env)
 
     # -- internals ----------------------------------------------------------
     def _target(self, s: Dict[str, Any]) -> float:
@@ -143,7 +184,7 @@ class AuthorityGovernor:
                 self._last_promote[cc] = t
         self._band_idx[cc] = idx
 
-    def _audit(self, cc: str, authority: float) -> None:
+    def _audit(self, cc: str, authority: float, environment: str = "unknown") -> None:
         if self._el is None:
             return
         self._el.append({
@@ -151,6 +192,8 @@ class AuthorityGovernor:
             "action_type": "TRUST_CHANGE", "object_ids": [cc],
             "payload": {"capability_class": cc, "authority": authority,
                         "band": self.band(cc),
+                        "environment": environment,
+                        "earned_in": list(self._earned_in.get(cc, [])),
                         "contributions": self._contributions(self._signals.get(cc, {}))},
             "evidence_confidence": 1.0, "evidence_source": "AG",
             "prev_hash": "", "hash": ""})
