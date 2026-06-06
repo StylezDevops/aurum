@@ -78,7 +78,7 @@ class Toolsmith:
             "event_id": str(uuid.uuid4()),
             "timestamp": self._now(),
             "source_organ": "TS",
-            "action_type": "PROMOTION",
+            "action_type": action.upper(),
             "object_ids": [tool_id],
             "payload": {"ts_action": action, **detail},
             "evidence_confidence": 1.0,
