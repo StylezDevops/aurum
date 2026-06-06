@@ -75,19 +75,25 @@ class CausalSimulator:
         """change = {'op':'remove'|'add', 'node_id':..}. Returns the transitive
         set of nodes that reference the target (affected) plus leaf orphans."""
         target = change["node_id"]
-        affected = [
-            r[0] for r in self._db.execute(
-                """
-                WITH RECURSIVE up(n) AS (
-                    SELECT ?
-                    UNION
-                    SELECT e.src FROM cs_edges e JOIN up ON e.dst = up.n
-                )
-                SELECT n FROM up WHERE n <> ?
-                """,
-                (target, target),
-            ).fetchall()
-        ]
+        # Transitive referrers, split by node type: policy_rule referrers are reported
+        # as `conflicts` (the rules the change brushes), everything else (skills/tools/
+        # goals referencing the target) as `affected` — satisfying accept (a)'s
+        # "referencing skills/tools PLUS policy conflicts".
+        referrers = self._db.execute(
+            """
+            WITH RECURSIVE up(n) AS (
+                SELECT ?
+                UNION
+                SELECT e.src FROM cs_edges e JOIN up ON e.dst = up.n
+            )
+            SELECT up.n, COALESCE(nd.type, '') FROM up
+            LEFT JOIN cs_nodes nd ON nd.node_id = up.n
+            WHERE up.n <> ?
+            """,
+            (target, target),
+        ).fetchall()
+        affected = [n for (n, t) in referrers if t != "policy_rule"]
+        conflicts = [n for (n, t) in referrers if t == "policy_rule"]
         # orphaned: nodes that, with target removed, have no remaining referrer
         orphaned = [
             r[0] for r in self._db.execute(
@@ -103,7 +109,7 @@ class CausalSimulator:
                 (target, target),
             ).fetchall()
         ]
-        return {"affected": affected, "conflicts": [], "orphaned": orphaned}
+        return {"affected": affected, "conflicts": conflicts, "orphaned": orphaned}
 
     def project(self, plan: Any) -> Any:  # DEFERRED/EXPERIMENTAL
         raise unbuilt(self.ORGAN, "project")
