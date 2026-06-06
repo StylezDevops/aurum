@@ -145,14 +145,17 @@ class AuthorityGovernor:
             self._audit(capability_class, value, env, prev=prev, cause=cause)
 
     def apply_outcome(self, capability_class: str, *, good: bool, grounded: bool,
-                      environment: Optional[str] = None,
+                      environment: Optional[str] = None, severity: str = "task",
                       cause: Optional[Dict[str, Any]] = None) -> float:
         """Outcome-driven authority move — the OI→AG loop primitive. ASYMMETRIC BY DESIGN
         (see outcome_gated_authority_design.md); the asymmetry is the whole safety of it:
 
-          bad outcome  → DEMOTE one band, immediately, NO grounding required (a reflex —
-                         contraction is always safe). Repeated bad outcomes compound toward
-                         the floor.
+          bad outcome  → DEMOTE, immediately, NO grounding required (a reflex — contraction
+                         is always safe). SEVERITY-TIERED: a TASK failure ("confidence too
+                         high") drops ONE band (repeated ones compound); a GOVERNANCE failure
+                         (a "must never" that happened — credential exfil / tenant breach /
+                         constitutional) drops to the FLOOR immediately. Some categories you
+                         cannot afford to learn about gradually.
           good outcome → PROMOTE only if `grounded` (out-of-loop / human-confirmed), and
                          then only by a small capped step (slow rise via existing kinetics).
                          A good-but-UNGROUNDED (proxy "it worked") outcome NEVER promotes —
@@ -164,10 +167,19 @@ class AuthorityGovernor:
         Returns the resulting authority for the class."""
         cur = self.authority(capability_class)
         if not good:
-            idx = self._band_idx.get(capability_class, len(_BANDS) - 1)
-            demote_to = _BANDS[idx][2] - _DEMOTE_EPSILON  # just under this band's demote line
-            self.set_authority(capability_class, min(cur, demote_to),
-                               environment=environment, cause=cause)
+            if severity == "governance":
+                # a "must never" breach that nonetheless happened — not a confidence
+                # update, an attempt at the forbidden. FLOOR immediately, not one band.
+                # (The architecture is trend-over-spike EXCEPT here: some categories you
+                # cannot afford to learn about gradually.)
+                self.set_authority(capability_class, self._k["floor"],
+                                   environment=environment, cause=cause)
+            else:
+                # TASK failure — "our confidence was too high": a one-band Bayesian nudge.
+                idx = self._band_idx.get(capability_class, len(_BANDS) - 1)
+                demote_to = _BANDS[idx][2] - _DEMOTE_EPSILON  # just under this band's demote line
+                self.set_authority(capability_class, min(cur, demote_to),
+                                   environment=environment, cause=cause)
             return self.authority(capability_class)
         if not grounded:
             return cur  # CONSTITUTIONAL: never promote on ungrounded/proxy success

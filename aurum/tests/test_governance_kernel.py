@@ -334,3 +334,56 @@ def test_baseline_only_class_has_no_cause(tmp_path):
     k = _k(tmp_path)
     why = k.why_authority("exec")  # untouched beyond baseline seed
     assert why is not None and why["cause"] is None
+
+
+# ---------------------------------------------------------------------------
+# Severity-tiered demotion + rule-usage evidence
+# ---------------------------------------------------------------------------
+
+def test_governance_breach_floors_even_when_proxy_succeeds(tmp_path):
+    """The dangerous case: a governance breach that 'succeeds' by the proxy measure must
+    still floor authority (governance detection is INDEPENDENT of proxy-satisfied)."""
+    k = _k(tmp_path)
+    bb_before = len(k.bb.all_ids())
+    k.observe_outcome(
+        to_action("write_file", {"path": "/x"}),
+        {"completed": True, "quality": 1.0, "governance_violation": "credential_exfil"})
+    assert k.ag.band("file_write") == "advisory"          # floored
+    assert k.ag.authority("file_write") == k.ag.kinetics()["floor"]
+    assert len(k.bb.all_ids()) > bb_before                # breach banked to BB
+    why = k.why_authority("file_write")
+    assert why["cause"]["severity"] == "governance"
+    assert why["cause"]["severity_class"] == "credential_exfil"
+
+
+def test_task_failure_is_one_band_not_floor(tmp_path):
+    k = _k(tmp_path)
+    k.observe_outcome(to_action("write_file", {"path": "/x"}), {"completed": False})
+    assert k.ag.band("file_write") == "readonly"          # one band, not floor
+    assert k.why_authority("file_write")["cause"]["severity"] == "task"
+
+
+def test_classify_failure_governance_vs_task(tmp_path):
+    k = _k(tmp_path)
+    a = to_action("write_file", {"path": "/x"})
+    v = {"completed": True, "satisfied": True, "quality": 1.0, "signals": {}}
+    assert k._classify_failure(a, {"governance_violation": "tenant_boundary"}, v) == \
+        ("governance", "tenant_boundary")
+    assert k._classify_failure(
+        a, {}, {"signals": {"preference_violations": ["constitutional"]}}) == \
+        ("governance", "constitutional")
+    assert k._classify_failure(a, {}, {"signals": {}}) == ("task", "task_failure")
+    # an unknown violation string is NOT a governance class → task
+    assert k._classify_failure(a, {"governance_violation": "typo"}, {"signals": {}}) == \
+        ("task", "task_failure")
+
+
+def test_severity_evidence_counts_rule_usage(tmp_path):
+    k = _k(tmp_path)
+    k.observe_outcome(to_action("write_file", {"path": "/a"}), {"completed": False})
+    k.observe_outcome(to_action("terminal", {"command": "x"}), {"completed": False})
+    k.observe_outcome(to_action("write_file", {"path": "/b"}),
+                      {"completed": True, "quality": 1.0, "governance_violation": "data_destruction"})
+    ev = k.severity_evidence()
+    assert ev["task_failure"] == 2
+    assert ev["data_destruction"] == 1

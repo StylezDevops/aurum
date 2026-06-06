@@ -71,6 +71,19 @@ def default_rules() -> List[Dict[str, Any]]:
     ]
 
 
+# Governance-failure classes = "must never" breaches that, if they show up in an OUTCOME,
+# drop authority to the floor immediately (not a one-band nudge). These are POST-HOC: a
+# breach the pre-hoc gate (PK injection-boundary / chain-exfil / hard-deny) did NOT block.
+# REDUNDANCY NOTE (the "murder vs thou-shalt-not-kill" rule): do not add a class here that
+# PK already pre-blocks deterministically — it would be dead (the action never runs, so
+# there is no outcome to demote on). These are only the breaches detectable AFTER the fact.
+# Full rules-as-evidenced-entities (usage/age/overlap detection across the whole corpus) is
+# LS territory — captured as the next direction; here we record per-class fire counts.
+_GOVERNANCE_FAILURE_CLASSES: frozenset = frozenset({
+    "credential_exfil", "tenant_boundary", "constitutional", "data_destruction",
+})
+
+
 class GovernanceKernel:
     ORGAN = "GOV"
 
@@ -90,6 +103,10 @@ class GovernanceKernel:
         self.oi = OutcomeInterpreter(str(base / "oi.db"), el=self.el, bb_record=self.bb.write)
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
+        # Usage evidence on the severity rules: how often each failure class actually fires.
+        # A class that never fires is a candidate for review (dead/redundant); a hot one is
+        # load-bearing. The concrete first instance of "rules are themselves evidenced".
+        self._severity_hits: Dict[str, int] = {}
         # PERSISTENCE-AS-PROJECTION: `home` is the DURABLE state root (a mounted volume
         # that outlives the --rm cage — /workspace/group/.hermes on Windows, an Azure
         # Files / EFS / PVC share in a tenant). Compute is ephemeral; state lives here.
@@ -324,6 +341,26 @@ class GovernanceKernel:
     # record_outcome_verdict(). See outcome_gated_authority_design.md. This loop is a
     # LEARNING loop, NOT the first-instance firewall (that's cage + PK + taint).
 
+    def _classify_failure(self, action: Dict[str, Any], task_result: Dict[str, Any],
+                          verdict: Dict[str, Any]) -> tuple[str, str]:
+        """Classify a BAD outcome as a TASK failure (one-band nudge) or a GOVERNANCE failure
+        (floor immediately). Governance = an explicit "must never" breach surfaced in the
+        outcome — a `governance_violation` marker in a known class, or an OI signal flagging
+        a constitutional preference violation. Otherwise it's a task failure."""
+        gv = task_result.get("governance_violation")
+        if isinstance(gv, str) and gv in _GOVERNANCE_FAILURE_CLASSES:
+            return "governance", gv
+        # OI preference-violation signals naming a governance class also escalate
+        for v in (verdict.get("signals", {}) or {}).get("preference_violations", []) or []:
+            if isinstance(v, str) and v in _GOVERNANCE_FAILURE_CLASSES:
+                return "governance", v
+        return "task", "task_failure"
+
+    def severity_evidence(self) -> Dict[str, int]:
+        """Per-class fire counts for the severity rules (this process). Usage evidence: a
+        class that never fires is a review/redundancy candidate; a hot one is load-bearing."""
+        return dict(self._severity_hits)
+
     def observe_outcome(self, action: Dict[str, Any],
                         task_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Proxy outcome path, run AFTER a (governed) action executed.
@@ -344,22 +381,35 @@ class GovernanceKernel:
             # decision_id links the outcome event and the resulting TRUST_CHANGE so a replay
             # reconstructs WHY authority moved (criterion 5), not merely THAT it moved.
             decision_id = uuid.uuid4().hex
-            if not verdict["satisfied"]:
+            # SEVERITY first, INDEPENDENT of proxy-satisfied: a governance breach (credential
+            # exfil, tenant breach) often "succeeds" by the proxy measure — the most dangerous
+            # outcomes are the ones that pass. So a governance violation is BAD regardless of
+            # verdict["satisfied"]; a task failure is bad when the proxy says unsatisfied.
+            severity, severity_class = self._classify_failure(action, tr, verdict)
+            is_bad = (severity == "governance") or (not verdict["satisfied"])
+            if is_bad:
+                self._severity_hits[severity_class] = self._severity_hits.get(severity_class, 0) + 1
                 cause = {
                     "decision_id": decision_id, "trigger": "outcome_demote",
-                    "classified": "bad", "satisfaction_source": "proxy",
+                    "classified": "bad", "severity": severity, "severity_class": severity_class,
+                    "satisfaction_source": "proxy",
                     "tool_name": action.get("tool_name"), "action_id": action.get("action_id"),
                     "quality": verdict["quality"], "goal_id": goal_id,
                 }
                 # reflex demote — proxy is sufficient to contract (safe direction)
-                self.ag.apply_outcome(cc, good=False, grounded=False, environment=env, cause=cause)
-                # a hard failure (not even completed) isn't caught by OI's
-                # completed-unsatisfied BB hook, so capture it explicitly
-                if not verdict["completed"]:
-                    self.record_failure(action, str(tr.get("error") or "task not completed"))
+                self.ag.apply_outcome(cc, good=False, grounded=False, environment=env,
+                                      severity=severity, cause=cause)
+                # Bank a BB lesson for a hard failure (OI's completed-unsatisfied hook misses
+                # not-completed) AND for EVERY governance breach — a "must never" that happened
+                # is the most important thing to remember, even though it "succeeded" by proxy.
+                if not verdict["completed"] or severity == "governance":
+                    summary = (f"GOVERNANCE breach: {severity_class}" if severity == "governance"
+                               else str(tr.get("error") or "task not completed"))
+                    self.record_failure(action, summary)
                 self._best_effort_log("outcome_demote", action,
                                       {"decision_id": decision_id, "quality": verdict["quality"],
-                                       "classified": "bad", "band": self.ag.band(cc)})
+                                       "classified": "bad", "severity": severity,
+                                       "severity_class": severity_class, "band": self.ag.band(cc)})
             else:
                 # good PROXY outcome → HOLD. Promotion waits for a human-grounded verdict.
                 self._best_effort_log("outcome_hold", action,
