@@ -43,6 +43,12 @@ RUN touch README.md
 # provides `unshare` for best-effort network isolation of those test runs.
 RUN pip install -e . pytest==9.0.2
 
+# The governance organs live at /opt/hermes/aurum/aurum (the `aurum.aurum.*` package).
+# `pip install -e .` only exposes Hermes' OWN declared packages, not this nested tree,
+# so put the repo root on the path explicitly — otherwise the aurum-governance plugin
+# can't import the GovernanceKernel and (fail-closed) would block every tool call.
+ENV PYTHONPATH=/opt/hermes
+
 # The cage runs the container as the host UID (--user uid:gid) with HOME=/home/node
 # on Linux, or as image-default root on native Windows. Make a world-writable home
 # so dotfile writes succeed under either identity.
