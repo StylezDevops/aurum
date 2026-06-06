@@ -17,7 +17,10 @@ jobs:
   nix:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # COST: macos-latest bills ~10x Linux and was the top Actions spend
+        # (free personal account, 2,000 min/mo). Commented out, not deleted —
+        # restore `, macos-latest` here to re-enable mac builds. 2026-06.
+        os: [ubuntu-latest]  # , macos-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:

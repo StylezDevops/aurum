@@ -1,11 +1,14 @@
 name: Supply Chain Audit
 
+# DISABLED 2026-06 — solo personal fork (single contributor). Manual-only via
+# workflow_dispatch; restore the pull_request trigger below to re-enable.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  # No paths filter — the jobs must always run so required checks
-  # report a status (path-gated workflows leave checks "pending" forever
-  # when no matching files change, which blocks merge).
+  workflow_dispatch:
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  #   # No paths filter — the jobs must always run so required checks
+  #   # report a status (path-gated workflows leave checks "pending" forever
+  #   # when no matching files change, which blocks merge).
 
 permissions:
   pull-requests: write

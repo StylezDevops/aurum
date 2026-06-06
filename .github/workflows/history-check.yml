@@ -13,9 +13,13 @@ name: History Check
 # This check catches the failure mode by requiring `git merge-base` between
 # the PR head and main to be non-empty.
 
+# DISABLED 2026-06 — orphan-branch graft protection is a multi-contributor
+# safeguard; unnecessary on a solo fork. Manual-only via workflow_dispatch;
+# restore the pull_request trigger below to re-enable.
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+  # pull_request:
+  #   branches: [main]
 
 permissions:
   contents: read

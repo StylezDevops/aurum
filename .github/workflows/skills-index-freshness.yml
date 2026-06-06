@@ -8,8 +8,10 @@ name: Skills Index Freshness Check
 # Triggered every 4 hours so we catch a stuck cron within one tick.
 
 on:
-  schedule:
-    - cron: '0 */4 * * *'
+  # schedule DISABLED 2026-06 — solo fork; jobs are gated to the upstream repo
+  # anyway. Restore to re-enable the 4-hourly freshness probe.
+  # schedule:
+  #   - cron: '0 */4 * * *'
   workflow_dispatch:
 
 permissions:

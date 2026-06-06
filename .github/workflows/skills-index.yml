@@ -1,9 +1,11 @@
 name: Build Skills Index
 
 on:
-  schedule:
-    # Run twice daily: 6 AM and 6 PM UTC
-    - cron: '0 6,18 * * *'
+  # schedule DISABLED 2026-06 — burns a runner tick per fire even though the
+  # jobs are gated to the upstream repo. Restore to re-enable scheduled rebuilds.
+  # schedule:
+  #   # Run twice daily: 6 AM and 6 PM UTC
+  #   - cron: '0 6,18 * * *'
   workflow_dispatch:  # Manual trigger
   push:
     branches: [main]
