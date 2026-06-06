@@ -235,3 +235,21 @@ def test_restore_authority_is_silent_no_audit():
     assert ag.band("c") == "readonly"
     assert ag.earned_in("c") == ["dev", "qa"]
     assert len(el.query({"source_organ": "AG"})) == before  # silent — no phantom audit
+
+
+# -- severity-tiered demotion (task = one band; governance = floor) --------
+def test_apply_outcome_governance_failure_floors():
+    ag = _ag()
+    ag.set_authority("c", 0.97)  # full
+    ag.apply_outcome("c", good=False, grounded=False, severity="governance")
+    assert ag.authority("c") == ag.kinetics()["floor"]   # floored, not one band
+    assert ag.band("c") == "advisory"
+
+
+def test_apply_outcome_task_failure_one_band_vs_governance_floor():
+    ag_task = _ag(); ag_task.set_authority("c", 0.85)
+    ag_gov = _ag(); ag_gov.set_authority("c", 0.85)
+    ag_task.apply_outcome("c", good=False, grounded=False, severity="task")
+    ag_gov.apply_outcome("c", good=False, grounded=False, severity="governance")
+    assert ag_task.band("c") == "readonly"     # one band
+    assert ag_gov.band("c") == "advisory"      # floor — governance is not a nudge
