@@ -46,6 +46,10 @@ EvidenceStrength = Literal["strong", "weak"]
 ELActionType = Literal[
     "VOTE", "PROMOTION", "EXCEPTION", "TRUST_CHANGE",
     "BRANCH", "PROPOSAL", "COST_ANOMALY", "ARCHIVE",
+    # TS lifecycle action types (action.upper() from ts._log)
+    "PROMOTE", "PROPOSE", "BUILD_CAGED", "TEST", "QUARANTINE", "UNQUARANTINE", "DEPRECATE",
+    # Arbitration
+    "GOVERNANCE_DECISION",
 ]
 
 
