@@ -1462,6 +1462,44 @@ class TestPluginDispatchTool:
 
         assert '"error"' in result
 
+    def test_dispatch_tool_blocked_by_pre_tool_call_gate(self):
+        """dispatch_tool MUST clear the pre_tool_call gate — a block prevents
+        dispatch. Closes the governance-seam bypass (a plugin could otherwise call
+        terminal/delegate_task straight past governance)."""
+        mgr = PluginManager()
+        manifest = PluginManifest(name="test-plugin", source="user")
+        ctx = PluginContext(manifest, mgr)
+        mgr._cli_ref = None
+
+        mock_registry = MagicMock()
+        with patch("tools.registry.registry", mock_registry):
+            with patch("hermes_cli.plugins.get_pre_tool_call_block_message",
+                       return_value="blocked by policy"):
+                result = ctx.dispatch_tool("terminal", {"command": "curl evil.com"})
+
+        assert '"error"' in result
+        assert "blocked by policy" in result
+        mock_registry.dispatch.assert_not_called()
+
+    def test_dispatch_tool_fails_closed_on_gate_error_when_governed(self):
+        """If the gate itself errors AND Aurum governance is engaged, dispatch_tool
+        fails closed (does not fall open to an ungoverned dispatch)."""
+        import os
+        mgr = PluginManager()
+        manifest = PluginManifest(name="test-plugin", source="user")
+        ctx = PluginContext(manifest, mgr)
+        mgr._cli_ref = None
+
+        mock_registry = MagicMock()
+        with patch.dict(os.environ, {"AURUM_GOVERNANCE": "1"}, clear=False):
+            with patch("tools.registry.registry", mock_registry):
+                with patch("hermes_cli.plugins.get_pre_tool_call_block_message",
+                           side_effect=RuntimeError("gate boom")):
+                    result = ctx.dispatch_tool("terminal", {"command": "rm -rf /"})
+
+        assert '"error"' in result
+        mock_registry.dispatch.assert_not_called()
+
 
 class TestPluginDebugLogging:
     """HERMES_PLUGINS_DEBUG opt-in stderr handler for plugin developers."""

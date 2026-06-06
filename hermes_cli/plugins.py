@@ -485,6 +485,22 @@ class PluginContext:
         """
         from tools.registry import registry
 
+        # dispatch_tool is a REAL execution path — a plugin can invoke terminal /
+        # delegate_task here. It must clear the same pre_tool_call gate the model's
+        # tool calls clear, or it is a governance-seam bypass (an ungoverned action).
+        # get_pre_tool_call_block_message runs every registered pre_tool_call hook
+        # (including aurum-governance).
+        try:
+            _block = get_pre_tool_call_block_message(
+                tool_name, args if isinstance(args, dict) else {}
+            )
+        except Exception:
+            # Fail closed when Aurum governance is engaged; otherwise stock behavior.
+            _block = "governance gate error" if _governance_fail_closed_active() else None
+        if _block is not None:
+            import json
+            return json.dumps({"error": _block}, ensure_ascii=False)
+
         # Wire up parent agent context when available (CLI mode).
         # In gateway mode _cli_ref is None — tools degrade gracefully
         # (workspace hints fall back to TERMINAL_CWD, no spinner).
@@ -1673,6 +1689,16 @@ def set_thread_tool_whitelist(
 
 def clear_thread_tool_whitelist() -> None:
     _thread_tool_whitelist.allowed = None
+
+
+def _governance_fail_closed_active() -> bool:
+    """When Aurum governance is engaged, a pre_tool_call GATE error must fail CLOSED
+    (block the call) rather than fall open. Scoped to AURUM_GOVERNANCE=1 so stock
+    Hermes keeps its fail-open behavior and a non-governed session is never bricked
+    by a gate error. ``AURUM_GOVERNANCE_DISABLE=1`` is the kill-switch."""
+    if os.environ.get("AURUM_GOVERNANCE_DISABLE", "").lower() in {"1", "true", "yes", "on"}:
+        return False
+    return os.environ.get("AURUM_GOVERNANCE") == "1"
 
 
 def get_pre_tool_call_block_message(
