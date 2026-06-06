@@ -11,10 +11,17 @@ aurum_arbitration_spec.md
 aurum_LS_design.md
 aurum_build_sprints.md
 aurum/aurum_organs_spec.md
+outcome_gated_authority_design.md
 BUILDPROMPT.TXT
 AurumExplained.md
 CURRENT_PROJECT_STATUS.md
 .vscode/
+
+# Secret key files — never tracked (injected at runtime, never committed)
+openrouterAurmAPIKEY.txt
+*API*KEY*.txt
+*apikey*.txt
+
 .env
 .env.local
 .env.development.local
