@@ -62,6 +62,14 @@ def test_search_returns_empty_when_no_match():
     assert bb.search("zzznomatch") == []
 
 
+def test_write_rejects_duplicate_id():
+    """BB is append-only — rewriting an existing id must raise, not silently replace."""
+    bb = _bb()
+    bb.write({"id": "pm1", "summary": "original"})
+    with pytest.raises(ValueError, match="already exists"):
+        bb.write({"id": "pm1", "summary": "attacker-replaced"})
+
+
 def test_search_excludes_quarantined():
     bb = _bb()
     pm_id = bb.write({"id": "q1", "summary": "tampered postmortem"})

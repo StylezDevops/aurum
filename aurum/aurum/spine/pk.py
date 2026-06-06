@@ -189,7 +189,9 @@ class PolicyKernel:
         Order: (1) injection-boundary guard, (2) rule table match, (3) default allow.
         """
         if not isinstance(action, dict):
-            action = {}
+            raise TypeError(
+                f"PK.check: action must be a dict, got {type(action).__name__!r}"
+            )
 
         # AURUM_ERR_008: justification tracing — untrusted source → deny
         for src in self.trace_justification(action):
@@ -209,7 +211,14 @@ class PolicyKernel:
                 if result["decision"] == "needs_gate":
                     gate_class = rule.get("gate_class", "B")
                     ttl = float(rule.get("ttl_seconds", 3600.0))
-                    self._create_gate(rule.get("rule_id"), gate_class, ttl)
+                    rule_id = rule.get("rule_id")
+                    # Deduplicate: only one open gate per rule_id at a time.
+                    already_open = any(
+                        g["rule_id"] == rule_id
+                        for g in self.open_gates()
+                    )
+                    if not already_open:
+                        self._create_gate(rule_id, gate_class, ttl)
                 return result
 
         return CheckResult(decision="allow", rule_id=None, reason="no-rule-matched")
@@ -237,14 +246,18 @@ class PolicyKernel:
                 aggregate_privilege=agg_privilege,
             )
 
-        # AURUM_ERR_007: new taint path (exfiltration)
-        for sources, sinks in paths:
-            sig = _taint_sig(sources, sinks)
-            self._record_denial(sig, {"policy_version": self.version})
+        # AURUM_ERR_007: new taint path (exfiltration).
+        # Record ALL paths before returning so padding-resistant matching (AURUM_ERR_009)
+        # covers every path in the chain, not just the first one encountered.
+        if paths:
+            first_sources, first_sinks = paths[0]
+            for sources, sinks in paths:
+                sig = _taint_sig(sources, sinks)
+                self._record_denial(sig, {"policy_version": self.version})
             return ChainResult(
                 decision="deny",
                 rule_id="pk:chain-exfiltration",
-                reason=f"taint path: {sorted(sources)} -> {sorted(sinks)}",
+                reason=f"taint path: {sorted(first_sources)} -> {sorted(first_sinks)}",
                 aggregate_privilege=agg_privilege,
             )
 
