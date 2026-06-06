@@ -72,3 +72,43 @@ def test_decisions_logged_to_el(plugin):
     plugin._on_pre_tool_call("write_file", {"path": "/x", "content": "y"})
     events = plugin._get_kernel().el.query({"action_type": "GOVERNANCE_DECISION"})
     assert any(e["payload"].get("outcome") == "proceed" for e in events)
+
+
+# ---------------------------------------------------------------------------
+# post_tool_call -> OI->BB->AG outcome loop
+# ---------------------------------------------------------------------------
+
+def test_post_tool_call_errored_consequential_demotes(plugin):
+    k = plugin._get_kernel()
+    before = k.ag.band("file_write")
+    plugin._on_post_tool_call("write_file", {"path": "/x"},
+                              result='{"error": "disk full"}', status="error")
+    assert k.ag.band("file_write") != before  # reflex demote via the loop
+
+
+def test_post_tool_call_good_consequential_holds(plugin):
+    k = plugin._get_kernel()
+    before = k.ag.authority("file_write")
+    for _ in range(5):
+        plugin._on_post_tool_call("write_file", {"path": "/x"},
+                                  result="ok wrote file", status="success")
+    assert k.ag.authority("file_write") == before  # proxy success never promotes
+
+
+def test_post_tool_call_safe_read_skipped(plugin):
+    k = plugin._get_kernel()
+    before = k.ag.authority("read")
+    plugin._on_post_tool_call("read_file", {"path": "/x"},
+                              result='{"error": "nope"}', status="error")
+    assert k.ag.authority("read") == before  # reads don't move authority
+
+
+def test_post_tool_call_disabled_is_noop(tmp_path, monkeypatch):
+    monkeypatch.delenv("AURUM_GOVERNANCE", raising=False)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("aurum_gov_off2", _PLUGIN_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # off -> returns without building a kernel or raising
+    assert mod._on_post_tool_call("write_file", {"path": "/x"},
+                                  result='{"error":"x"}', status="error") is None

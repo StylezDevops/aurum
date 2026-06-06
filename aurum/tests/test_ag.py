@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import tempfile
 
+import pytest
+
 from aurum.durability.el import EvidenceLedger
 from aurum.novel.ag import AuthorityGovernor
 
@@ -167,3 +169,56 @@ def test_explain_exposes_earned_in():
     ag.observe("c", {"tl_tier": 3, "eg_uncertainty": 0.1, "hvp_pass_rate": 1.0,
                      "oi_trend": 1.0}, environment="qa")
     assert ag.explain("c")["earned_in"] == ["qa"]
+
+
+# -- outcome-gated authority: apply_outcome (asymmetric) -------------------
+def test_apply_outcome_bad_demotes_one_band():
+    ag = _ag()
+    ag.set_authority("c", 0.85)          # code band
+    assert ag.band("c") == "code"
+    ag.apply_outcome("c", good=False, grounded=False)
+    assert ag.band("c") == "readonly"    # one band down, reflex
+
+
+def test_apply_outcome_bad_compounds_toward_floor():
+    ag = _ag()
+    ag.set_authority("c", 0.97)          # full
+    bands = []
+    for _ in range(4):
+        ag.apply_outcome("c", good=False, grounded=False)
+        bands.append(ag.band("c"))
+    assert bands == ["code", "readonly", "advisory", "advisory"]  # compounds, then floors
+
+
+def test_apply_outcome_good_proxy_is_noop():
+    """CONSTITUTIONAL: a good but UNGROUNDED (proxy) outcome must never promote."""
+    ag = _ag()
+    ag.set_authority("c", 0.65)
+    for _ in range(20):
+        ag.apply_outcome("c", good=True, grounded=False)
+    assert ag.authority("c") == 0.65     # unchanged — proxy never promotes
+
+
+def test_apply_outcome_good_grounded_promotes_slowly():
+    ag = _ag()
+    ag.set_authority("c", 0.65)
+    ag.apply_outcome("c", good=True, grounded=True)
+    # rises by min(rise_rate, gain cap) = 0.05
+    assert ag.authority("c") == pytest.approx(0.70)
+
+
+def test_apply_outcome_promote_is_capped_and_slow_vs_demote_fast():
+    """Asymmetry: one bad outcome drops a whole band; one grounded-good nudges by the
+    capped rise step. Demote >> promote in magnitude."""
+    ag = _ag()
+    ag.set_authority("c", 0.85)
+    drop = 0.85 - (ag.apply_outcome("c", good=False, grounded=False))
+    ag.set_authority("c", 0.85)
+    rise = ag.apply_outcome("c", good=True, grounded=True) - 0.85
+    assert drop > rise
+
+
+def test_apply_outcome_records_environment_provenance():
+    ag = _ag()
+    ag.apply_outcome("c", good=True, grounded=True, environment="prod")
+    assert "prod" in ag.earned_in("c")

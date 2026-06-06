@@ -32,6 +32,7 @@ from .action_map import DEFAULT_AG_BASELINE, SAFE_READ, risk_tier
 from .arbitration.ca import ConflictArbiter
 from .durability.el import EvidenceLedger
 from .novel.ag import AuthorityGovernor
+from .novel.oi import OutcomeInterpreter
 from .spine.bb import BlackBox
 from .spine.pk import PolicyKernel
 
@@ -84,6 +85,9 @@ class GovernanceKernel:
         self.ag = AuthorityGovernor(el=self.el)
         self.ca = ConflictArbiter(str(base / "ca.db"), el=self.el)
         self.bb = BlackBox(str(base / "bb.db"), pk=self.pk, el=self.el)
+        # OI judges outcomes AFTER an action runs (the OI→BB→AG loop). bb_record wires
+        # OI→BB: OI auto-banks "completed-but-unsatisfied" lessons. el for the audit trail.
+        self.oi = OutcomeInterpreter(str(base / "oi.db"), el=self.el, bb_record=self.bb.write)
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Operator-configured baseline authority (raising it is a HUMAN_GATE config
@@ -266,5 +270,63 @@ class GovernanceKernel:
                 "summary": error,
                 "action": action,
             })
+        except Exception:
+            pass
+
+    # -- the OI → BB → AG outcome loop (post-action; ASYMMETRIC) -------------
+    # Demote is a reflex (proxy is enough — contraction is safe). Promotion is NEVER
+    # driven from here on a proxy signal; it requires a human-grounded verdict via
+    # record_outcome_verdict(). See outcome_gated_authority_design.md. This loop is a
+    # LEARNING loop, NOT the first-instance firewall (that's cage + PK + taint).
+
+    def observe_outcome(self, action: Dict[str, Any],
+                        task_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Proxy outcome path, run AFTER a (governed) action executed.
+
+        OI interprets the result (proxy); a BAD outcome reflexively DEMOTES the action's
+        capability_class in AG and banks the lesson to BB. A GOOD (proxy) outcome is HELD —
+        proxy success NEVER promotes (the forbidden-feedback guard). Returns the OI verdict
+        (or None if the loop could not run). Best-effort; never raises — the action already
+        happened, so a failure here must not crash the turn, only skip the learning update."""
+        try:
+            cc = action.get("capability_class", "default")
+            env = action.get("environment")
+            goal_id = str(action.get("goal_id") or action.get("action_id") or "task")
+            tr = dict(task_result)
+            tr.setdefault("capability_class", cc)
+            tr.setdefault("task_id", action.get("action_id"))
+            verdict = self.oi.interpret(tr, goal_id)  # proxy; auto-banks completed-unsatisfied → BB
+            if not verdict["satisfied"]:
+                # reflex demote — proxy is sufficient to contract (safe direction)
+                self.ag.apply_outcome(cc, good=False, grounded=False, environment=env)
+                # a hard failure (not even completed) isn't caught by OI's
+                # completed-unsatisfied BB hook, so capture it explicitly
+                if not verdict["completed"]:
+                    self.record_failure(action, str(tr.get("error") or "task not completed"))
+                self._best_effort_log("outcome_demote", action,
+                                      {"quality": verdict["quality"], "band": self.ag.band(cc)})
+            else:
+                # good PROXY outcome → HOLD. Promotion waits for a human-grounded verdict.
+                self._best_effort_log("outcome_hold", action,
+                                      {"quality": verdict["quality"],
+                                       "note": "proxy-good; authority unchanged (no promote on proxy)"})
+            return verdict
+        except Exception:
+            return None
+
+    def record_outcome_verdict(self, task_id: str, capability_class: str,
+                               satisfied: bool, *, environment: Optional[str] = None) -> None:
+        """Ground-truth (out-of-loop / human) outcome path. This is the ONLY path that may
+        PROMOTE authority. A grounded GOOD verdict slow-promotes the class; a grounded BAD
+        verdict demotes it (reinforcing the reflex). Best-effort; never raises."""
+        try:
+            self.oi.record_human_verdict(task_id, {"satisfied": bool(satisfied)})
+            self.ag.apply_outcome(capability_class, good=bool(satisfied), grounded=True,
+                                  environment=environment)
+            self._best_effort_log(
+                "outcome_verdict",
+                {"action_id": task_id, "capability_class": capability_class},
+                {"satisfied": bool(satisfied), "satisfaction_source": "human",
+                 "authority": self.ag.authority(capability_class)})
         except Exception:
             pass
