@@ -125,12 +125,16 @@ class AuthorityGovernor:
 
     def set_authority(self, capability_class: str, value: float,
                       now: Optional[float] = None,
-                      environment: Optional[str] = None) -> None:
+                      environment: Optional[str] = None,
+                      cause: Optional[Dict[str, Any]] = None) -> None:
         """Kinetics-free authority set + band re-evaluation with hysteresis/dwell.
 
         `environment` is recorded as provenance (NEVER affects `value` or the band —
         that's the frozen scoring). Unresolved provenance is recorded as 'unknown',
-        never silently 'prod' (fail-safe: unknown should be treated as LESS trusted)."""
+        never silently 'prod' (fail-safe: unknown should be treated as LESS trusted).
+        `cause` is the WHY (the triggering outcome + its classification + evidence refs):
+        recorded in the TRUST_CHANGE so a replay reconstructs *why* authority moved, not
+        just *that* it did."""
         env = self._resolve_env(environment)
         value = max(self._k["floor"], _clamp01(value))
         prev = self._authority.get(capability_class)
@@ -138,10 +142,11 @@ class AuthorityGovernor:
         self._update_band(capability_class, value, now)
         self._record_env(capability_class, env)
         if prev != value:
-            self._audit(capability_class, value, env)
+            self._audit(capability_class, value, env, prev=prev, cause=cause)
 
     def apply_outcome(self, capability_class: str, *, good: bool, grounded: bool,
-                      environment: Optional[str] = None) -> float:
+                      environment: Optional[str] = None,
+                      cause: Optional[Dict[str, Any]] = None) -> float:
         """Outcome-driven authority move — the OI→AG loop primitive. ASYMMETRIC BY DESIGN
         (see outcome_gated_authority_design.md); the asymmetry is the whole safety of it:
 
@@ -161,12 +166,13 @@ class AuthorityGovernor:
         if not good:
             idx = self._band_idx.get(capability_class, len(_BANDS) - 1)
             demote_to = _BANDS[idx][2] - _DEMOTE_EPSILON  # just under this band's demote line
-            self.set_authority(capability_class, min(cur, demote_to), environment=environment)
+            self.set_authority(capability_class, min(cur, demote_to),
+                               environment=environment, cause=cause)
             return self.authority(capability_class)
         if not grounded:
             return cur  # CONSTITUTIONAL: never promote on ungrounded/proxy success
         gain = min(self._k["rise_rate"], self._k["max_gain_per_window"])
-        self.set_authority(capability_class, cur + gain, environment=environment)
+        self.set_authority(capability_class, cur + gain, environment=environment, cause=cause)
         return self.authority(capability_class)
 
     def restore_authority(self, capability_class: str, value: float,
@@ -228,16 +234,22 @@ class AuthorityGovernor:
                 self._last_promote[cc] = t
         self._band_idx[cc] = idx
 
-    def _audit(self, cc: str, authority: float, environment: str = "unknown") -> None:
+    def _audit(self, cc: str, authority: float, environment: str = "unknown",
+               prev: Optional[float] = None, cause: Optional[Dict[str, Any]] = None) -> None:
         if self._el is None:
             return
+        payload: Dict[str, Any] = {
+            "capability_class": cc, "authority": authority,
+            "prev_authority": prev,        # the WHY chain: before -> after ...
+            "band": self.band(cc),
+            "environment": environment,
+            "earned_in": list(self._earned_in.get(cc, [])),
+            "contributions": self._contributions(self._signals.get(cc, {}))}
+        if cause is not None:
+            payload["cause"] = cause       # ... triggered by which outcome + classification + evidence
         self._el.append({
             "event_id": "", "timestamp": "", "source_organ": "AG",
             "action_type": "TRUST_CHANGE", "object_ids": [cc],
-            "payload": {"capability_class": cc, "authority": authority,
-                        "band": self.band(cc),
-                        "environment": environment,
-                        "earned_in": list(self._earned_in.get(cc, [])),
-                        "contributions": self._contributions(self._signals.get(cc, {}))},
+            "payload": payload,
             "evidence_confidence": 1.0, "evidence_source": "AG",
             "prev_hash": "", "hash": ""})
