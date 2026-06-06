@@ -341,19 +341,29 @@ class GovernanceKernel:
             tr.setdefault("capability_class", cc)
             tr.setdefault("task_id", action.get("action_id"))
             verdict = self.oi.interpret(tr, goal_id)  # proxy; auto-banks completed-unsatisfied → BB
+            # decision_id links the outcome event and the resulting TRUST_CHANGE so a replay
+            # reconstructs WHY authority moved (criterion 5), not merely THAT it moved.
+            decision_id = uuid.uuid4().hex
             if not verdict["satisfied"]:
+                cause = {
+                    "decision_id": decision_id, "trigger": "outcome_demote",
+                    "classified": "bad", "satisfaction_source": "proxy",
+                    "tool_name": action.get("tool_name"), "action_id": action.get("action_id"),
+                    "quality": verdict["quality"], "goal_id": goal_id,
+                }
                 # reflex demote — proxy is sufficient to contract (safe direction)
-                self.ag.apply_outcome(cc, good=False, grounded=False, environment=env)
+                self.ag.apply_outcome(cc, good=False, grounded=False, environment=env, cause=cause)
                 # a hard failure (not even completed) isn't caught by OI's
                 # completed-unsatisfied BB hook, so capture it explicitly
                 if not verdict["completed"]:
                     self.record_failure(action, str(tr.get("error") or "task not completed"))
                 self._best_effort_log("outcome_demote", action,
-                                      {"quality": verdict["quality"], "band": self.ag.band(cc)})
+                                      {"decision_id": decision_id, "quality": verdict["quality"],
+                                       "classified": "bad", "band": self.ag.band(cc)})
             else:
                 # good PROXY outcome → HOLD. Promotion waits for a human-grounded verdict.
                 self._best_effort_log("outcome_hold", action,
-                                      {"quality": verdict["quality"],
+                                      {"decision_id": decision_id, "quality": verdict["quality"],
                                        "note": "proxy-good; authority unchanged (no promote on proxy)"})
             return verdict
         except Exception:
@@ -366,12 +376,40 @@ class GovernanceKernel:
         verdict demotes it (reinforcing the reflex). Best-effort; never raises."""
         try:
             self.oi.record_human_verdict(task_id, {"satisfied": bool(satisfied)})
+            decision_id = uuid.uuid4().hex
+            cause = {
+                "decision_id": decision_id,
+                "trigger": "outcome_verdict",
+                "classified": "good" if satisfied else "bad",
+                "satisfaction_source": "human",     # the ground-truth, out-of-loop signal
+                "task_id": task_id, "capability_class": capability_class,
+            }
             self.ag.apply_outcome(capability_class, good=bool(satisfied), grounded=True,
-                                  environment=environment)
+                                  environment=environment, cause=cause)
             self._best_effort_log(
                 "outcome_verdict",
                 {"action_id": task_id, "capability_class": capability_class},
-                {"satisfied": bool(satisfied), "satisfaction_source": "human",
+                {"decision_id": decision_id, "satisfied": bool(satisfied),
+                 "satisfaction_source": "human",
                  "authority": self.ag.authority(capability_class)})
         except Exception:
             pass
+
+    def why_authority(self, capability_class: str) -> Optional[Dict[str, Any]]:
+        """Replay the WHY of the latest authority change for a class — reconstructed from the
+        durable, verifiable ledger: before→after band/value + the triggering outcome (its
+        classification, source, and evidence refs). Answers 'why did AG move?', not just
+        'that it moved' (the criterion-5 replay prize). `cause.decision_id` joins to the
+        GOVERNANCE_DECISION outcome event in the same ledger."""
+        try:
+            for ev in self.el.query({"source_organ": "AG", "action_type": "TRUST_CHANGE",
+                                     "limit": 1_000_000}):
+                p = ev.get("payload") or {}
+                if p.get("capability_class") == capability_class:
+                    return {"capability_class": capability_class,
+                            "from": p.get("prev_authority"), "to": p.get("authority"),
+                            "band": p.get("band"), "environment": p.get("environment"),
+                            "cause": p.get("cause")}
+        except Exception:
+            return None
+        return None

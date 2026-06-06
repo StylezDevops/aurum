@@ -287,3 +287,50 @@ def test_verify_fail_logs_integrity_alarm(tmp_path):
     assert k._authority_history() == {}
     events = k.el.query({"action_type": "GOVERNANCE_DECISION"})
     assert any(e["payload"].get("outcome") == "integrity_alarm" for e in events)
+
+
+# ---------------------------------------------------------------------------
+# Replay why-chain: WHY authority moved, not just THAT it moved (criterion 5)
+# ---------------------------------------------------------------------------
+
+def test_demotion_records_why_chain(tmp_path):
+    k = _k(tmp_path)
+    k.observe_outcome(to_action("write_file", {"path": "/x"}),
+                      {"completed": False, "error": "disk full"})
+    why = k.why_authority("file_write")
+    assert why is not None
+    assert why["from"] == 0.85 and why["to"] < 0.85      # before -> after recorded
+    cause = why["cause"]
+    assert cause["classified"] == "bad"
+    assert cause["satisfaction_source"] == "proxy"
+    assert cause["tool_name"] == "write_file"
+    assert "quality" in cause and "decision_id" in cause
+
+
+def test_why_chain_joins_to_outcome_event(tmp_path):
+    """The authority-change event and its triggering outcome event share a decision_id —
+    the two ledger rows are joinable, so the cause is reconstructable."""
+    k = _k(tmp_path)
+    k.observe_outcome(to_action("terminal", {"command": "x"}), {"completed": False})
+    outcomes = [e for e in k.el.query({"action_type": "GOVERNANCE_DECISION"})
+                if e["payload"].get("outcome") == "outcome_demote"]
+    assert outcomes
+    outcome_did = outcomes[0]["payload"]["decision_id"]
+    why = k.why_authority("exec")
+    assert why["cause"]["decision_id"] == outcome_did
+
+
+def test_promotion_why_is_human_grounded(tmp_path):
+    k = _k(tmp_path)
+    k.record_outcome_verdict("task-9", "file_write", satisfied=True)
+    why = k.why_authority("file_write")
+    assert why["to"] > why["from"]               # promoted
+    assert why["cause"]["classified"] == "good"
+    assert why["cause"]["satisfaction_source"] == "human"   # never proxy on a promote
+
+
+def test_baseline_only_class_has_no_cause(tmp_path):
+    """A class only ever set to baseline has a TRUST_CHANGE but no triggering cause."""
+    k = _k(tmp_path)
+    why = k.why_authority("exec")  # untouched beyond baseline seed
+    assert why is not None and why["cause"] is None
