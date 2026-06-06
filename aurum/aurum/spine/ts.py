@@ -110,7 +110,9 @@ class Toolsmith:
         )
         self._db.commit()
         self._log("propose", tool_id, {"spec": spec_dict})
-        return self._get(tool_id)  # type: ignore[return-value]
+        result = self._get(tool_id)
+        assert result is not None
+        return result
 
     def build_caged(self, spec: Any) -> Dict[str, Any]:
         """Build (or transition an existing proposed tool) to caged state."""
@@ -123,7 +125,9 @@ class Toolsmith:
             tool_id = record["tool_id"]
             self._update(tool_id, state="caged")
         self._log("build_caged", tool_id, {})
-        return self._get(tool_id)  # type: ignore[return-value]
+        result = self._get(tool_id)
+        assert result is not None
+        return result
 
     def test(self, tool: Any) -> Dict[str, Any]:
         """Run (scaffolded) tests on a caged tool.  Returns test result dict."""
@@ -152,7 +156,9 @@ class Toolsmith:
             )
         self._update(tool_id, state="promoted", quarantine_reason=None)
         self._log("promote", tool_id, {"approved_by": approved_by})
-        return self._get(tool_id)  # type: ignore[return-value]
+        result = self._get(tool_id)
+        assert result is not None
+        return result
 
     def quarantine(self, tool_id: str, reason: str) -> None:
         """Move tool to quarantined state (requires per-invocation approval until recovered)."""
