@@ -18,7 +18,7 @@ BUILT: dict[str, bool] = {
     "GR": True, "PM": True, "TCM": True,
     # Tier 1 novel
     "AA": True, "LS": False, "HVP": True, "EG": True,
-    "CS": True, "AG": False, "OI": False,
+    "CS": True, "AG": False, "OI": True,
     # Tier 2 extensions
     "SDG": False, "SM": False,
     # Tier 3 support
