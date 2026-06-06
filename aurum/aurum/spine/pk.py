@@ -25,6 +25,7 @@ Reconciliation note: Hermes-tree tools/skills_guard.py + tools/skill_ci.py are l
 prior art covering a SLICE of PK (import-time AST scan / sandboxed validate-before-promote).
 Treat those as donors to migrate in later; this organ owns the full spec surface.
 """
+# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import hashlib

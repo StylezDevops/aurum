@@ -21,6 +21,7 @@ Honest v1 limits (documented, not hidden):
     only if they are demonstrably read-like, else CONSEQUENTIAL (fail-safe: unknown ⇒ treat
     as having side effects).
 """
+# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import uuid

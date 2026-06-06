@@ -15,6 +15,7 @@ Reconciliation: tools/toolsmith.py in the Hermes tree is working prior art
 (propose → scan → sandbox-test → staged; never auto-activates).  Migrate its
 logic INTO this organ as TS matures; keep it running until then.
 """
+# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import json

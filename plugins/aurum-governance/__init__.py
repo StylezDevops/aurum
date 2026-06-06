@@ -15,6 +15,7 @@ AG/CA fault → degrade to read-only). The plugin's own outer guard is the last 
 if even constructing/calling the kernel raises, it BLOCKS with a loud message (the env
 flag makes this safe to disable).
 """
+# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import logging

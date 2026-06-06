@@ -18,6 +18,7 @@ Security posture (fail closed everywhere):
 - If docker is missing, the image won't run, or the cage exits without valid output,
   the broker returns an error to the gateway rather than falling back to host execution.
 """
+# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import asyncio

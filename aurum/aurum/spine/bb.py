@@ -18,6 +18,7 @@ Reconciliation: agent/black_box.py in the Hermes tree is working prior art (reda
 postmortems + skill-review addendum) and the live implementation today.  Migrate its
 logic INTO this organ as BB matures; keep it running until then.
 """
+# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import hashlib
