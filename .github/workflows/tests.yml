@@ -1,16 +1,22 @@
 name: Tests
 
+# DISABLED 2026-06 — suite is green and the 2x ~11-min slices were the dominant
+# Linux Actions cost. Turned OFF to save minutes; run manually via the Actions tab
+# (workflow_dispatch) or re-enable automatic runs by restoring the push /
+# pull_request triggers below. (Disabling this also stops the main-only
+# save-durations cache job, which was failing on a pre-existing JSON-merge bug.)
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - '**/*.md'
+  #     - 'docs/**'
+  # pull_request:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - '**/*.md'
+  #     - 'docs/**'
 
 permissions:
   contents: read
