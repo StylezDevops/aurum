@@ -139,6 +139,15 @@ def test_test_unknown_tool_raises():
         ts.test({"tool_id": "nope"})
 
 
+def test_test_requires_caged_state():
+    """test() must enforce state='caged' — calling it on proposed/promoted must raise."""
+    ts = _ts()
+    spec = {"tool_id": "t_state"}
+    ts.propose(spec)
+    with pytest.raises(ValueError, match="caged"):
+        ts.test(spec)  # proposed → not allowed
+
+
 def test_quarantine_unknown_tool_raises():
     ts = _ts()
     with pytest.raises(KeyError):

@@ -140,7 +140,11 @@ class Toolsmith:
         tool_id = (
             tool.get("tool_id") if isinstance(tool, dict) else str(tool)
         )
-        self._require_tool(tool_id)
+        record = self._require_tool(tool_id)
+        if record["state"] != "caged":
+            raise ValueError(
+                f"TS: test() requires state='caged', got {record['state']!r}"
+            )
         result = {"passed": True, "failures": [], "tool_id": tool_id}
         result_json = json.dumps(result, ensure_ascii=False)
         self._update(tool_id, state="tested", result_json=result_json)
