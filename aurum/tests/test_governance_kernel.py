@@ -225,3 +225,65 @@ def test_completed_unsatisfied_banks_bb_lesson(tmp_path):
     k.observe_outcome(to_action("write_file", {"path": "/x"}),
                       {"completed": True, "redone": True, "quality": 0.4})
     assert len(k.bb.all_ids()) > before
+
+
+# ---------------------------------------------------------------------------
+# Persistence-as-projection: rehydrate AG authority from the durable EL
+# ---------------------------------------------------------------------------
+
+def test_authority_rehydrated_across_kernel_restart(tmp_path):
+    """A demote in 'turn 1' must survive --rm: a fresh kernel on the same durable home
+    rebuilds the demoted authority from the ledger instead of re-seeding baseline."""
+    home = str(tmp_path)
+    k1 = GovernanceKernel(home=home)
+    k1.observe_outcome(to_action("write_file", {"path": "/x"}),
+                       {"completed": False, "error": "boom"})
+    demoted = k1.ag.authority("file_write")
+    assert k1.ag.band("file_write") == "readonly"
+
+    k2 = GovernanceKernel(home=home)  # fresh kernel, same durable state root
+    assert k2.ag.authority("file_write") == demoted
+    assert k2.ag.band("file_write") == "readonly"  # learning survived the restart
+
+
+def test_untouched_class_keeps_baseline_after_restart(tmp_path):
+    home = str(tmp_path)
+    GovernanceKernel(home=home).observe_outcome(
+        to_action("write_file", {"path": "/x"}), {"completed": False})
+    k2 = GovernanceKernel(home=home)
+    assert k2.ag.band("exec") == "code"  # never touched → still baseline
+
+
+def test_rehydration_is_silent_no_phantom_events(tmp_path):
+    """Restoring authority from history must NOT re-log TRUST_CHANGE (the values were
+    already audited when first set). A second boot adds no baseline-seed events."""
+    home = str(tmp_path)
+    k1 = GovernanceKernel(home=home)
+    n1 = len(k1.el.query({"action_type": "TRUST_CHANGE", "limit": 100000}))
+    GovernanceKernel(home=home)  # second boot — all classes have history → silent restore
+    n2 = len(GovernanceKernel(home=home).el.query({"action_type": "TRUST_CHANGE", "limit": 100000}))
+    assert n2 == n1  # no phantom re-seed events accumulate per boot
+
+
+def test_tampered_ledger_not_rehydrated(tmp_path):
+    """The new obligation durable state creates: a ledger that fails verify_chain MUST NOT
+    drive authority. Rehydration falls back to the low-trust baseline (fail-safe)."""
+    from unittest import mock
+    from aurum.durability.el import EvidenceLedger
+    home = str(tmp_path)
+    k1 = GovernanceKernel(home=home)
+    k1.observe_outcome(to_action("write_file", {"path": "/x"}), {"completed": False})
+    assert k1.ag.band("file_write") == "readonly"  # history says demoted
+
+    with mock.patch.object(EvidenceLedger, "verify_chain", return_value=False):
+        k2 = GovernanceKernel(home=home)
+    # verify failed → did NOT project the demote → back to baseline (contraction-safe default)
+    assert k2.ag.band("file_write") == "code"
+
+
+def test_verify_fail_logs_integrity_alarm(tmp_path):
+    k = _k(tmp_path)
+    k.el.verify_chain = lambda: False  # type: ignore[method-assign]
+    assert k._authority_history() == {}
+    events = k.el.query({"action_type": "GOVERNANCE_DECISION"})
+    assert any(e["payload"].get("outcome") == "integrity_alarm" for e in events)

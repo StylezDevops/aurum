@@ -54,7 +54,13 @@ def _enabled() -> bool:
 
 
 def _home() -> str:
-    return os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+    """Durable state root for governance (EL / authority / BB / OI). MUST be a mount that
+    outlives the --rm cage — a host bind dir, Azure Files/EFS share, or a k8s PVC; the
+    container sees only this path (mount-jailed) and writes the ledger here. One knob,
+    deployment picks the backing store: AURUM_STATE_ROOT overrides; else HERMES_HOME; else
+    ~/.hermes."""
+    return (os.environ.get("AURUM_STATE_ROOT")
+            or os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes"))
 
 
 def _get_kernel():

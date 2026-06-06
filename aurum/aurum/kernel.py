@@ -90,11 +90,56 @@ class GovernanceKernel:
         self.oi = OutcomeInterpreter(str(base / "oi.db"), el=self.el, bb_record=self.bb.write)
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
-        # Operator-configured baseline authority (raising it is a HUMAN_GATE config
-        # decision per spec). Seed so the agent is operational; network/outward stays
-        # below the full band → gated until the operator raises it.
-        for cc, val in (ag_baseline or DEFAULT_AG_BASELINE).items():
-            self.ag.set_authority(cc, val)
+        # PERSISTENCE-AS-PROJECTION: `home` is the DURABLE state root (a mounted volume
+        # that outlives the --rm cage — /workspace/group/.hermes on Windows, an Azure
+        # Files / EFS / PVC share in a tenant). Compute is ephemeral; state lives here.
+        # On startup we rebuild AG authority from the durable ledger so governance LEARNS
+        # across turns instead of forgetting at every --rm — gated on EL.verify_chain so a
+        # tampered durable ledger can never drive authority (it falls back to baseline).
+        self._rehydrate_or_seed(ag_baseline or DEFAULT_AG_BASELINE)
+
+    # -- persistence: rehydrate authority from the durable ledger -----------
+
+    def _rehydrate_or_seed(self, baseline: Dict[str, float]) -> None:
+        """Project AG authority from the durable EL (verify-gated); seed baseline only for
+        classes with no durable history. Restore is SILENT (no re-audit) — the values were
+        logged when first set; replaying them must not write phantom TRUST_CHANGE events."""
+        history = self._authority_history()  # {} if empty OR if the chain failed to verify
+        for cc, val in baseline.items():
+            if cc in history:
+                auth, earned = history[cc]
+                self.ag.restore_authority(cc, auth, earned_in=earned)
+            else:
+                self.ag.set_authority(cc, val)  # first run for this class — seed (logged once)
+        for cc, (auth, earned) in history.items():
+            if cc not in baseline:
+                self.ag.restore_authority(cc, auth, earned_in=earned)
+
+    def _authority_history(self) -> Dict[str, Any]:
+        """Last authority per capability_class from the DURABLE EL — ONLY if the chain
+        verifies. A tampered durable ledger MUST NOT drive authority (the new obligation
+        durable state creates): on verify failure we log an integrity alarm and return {},
+        so the kernel falls back to the low-trust baseline (fail-safe = contraction)."""
+        try:
+            if not self.el.verify_chain():
+                self._best_effort_log(
+                    "integrity_alarm", {"action_id": "el-integrity"},
+                    {"reason": "EL.verify_chain failed — authority NOT rehydrated; baseline only"})
+                return {}
+        except Exception:
+            return {}  # cannot verify → do not project (fail-safe)
+        last: Dict[str, Any] = {}
+        try:
+            # query returns seq DESC, so the first time we see a class is its latest value
+            for ev in self.el.query({"source_organ": "AG", "action_type": "TRUST_CHANGE",
+                                     "limit": 1_000_000}):
+                p = ev.get("payload") or {}
+                cc = p.get("capability_class")
+                if cc is not None and cc not in last and "authority" in p:
+                    last[cc] = (float(p["authority"]), p.get("earned_in"))
+        except Exception:
+            return {}
+        return last
 
     # -- EL helpers ---------------------------------------------------------
 

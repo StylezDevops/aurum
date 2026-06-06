@@ -169,6 +169,19 @@ class AuthorityGovernor:
         self.set_authority(capability_class, cur + gain, environment=environment)
         return self.authority(capability_class)
 
+    def restore_authority(self, capability_class: str, value: float,
+                          earned_in: Optional[List[str]] = None) -> None:
+        """Rehydration projection — set authority for a class from DURABLE history WITHOUT
+        re-auditing. The value's provenance already lives in EL (it was logged when first
+        set); replaying it on boot must NOT write phantom TRUST_CHANGE events. Used only by
+        the kernel's verify_chain-gated rehydration, never on the live path. Does not alter
+        the scoring; just rebuilds the in-memory authority projection from the ledger."""
+        value = max(self._k["floor"], _clamp01(value))
+        self._authority[capability_class] = value
+        self._update_band(capability_class, value, None)
+        if earned_in:
+            self._earned_in[capability_class] = list(earned_in)
+
     # -- provenance helpers (additive; never touch scoring) -----------------
     @staticmethod
     def _resolve_env(environment: Optional[str]) -> str:

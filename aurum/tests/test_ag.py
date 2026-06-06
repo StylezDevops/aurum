@@ -222,3 +222,16 @@ def test_apply_outcome_records_environment_provenance():
     ag = _ag()
     ag.apply_outcome("c", good=True, grounded=True, environment="prod")
     assert "prod" in ag.earned_in("c")
+
+
+def test_restore_authority_is_silent_no_audit():
+    """restore_authority rebuilds the in-memory projection from the ledger; it must NOT
+    write a TRUST_CHANGE (the value was already audited when first set)."""
+    el = EvidenceLedger(os.path.join(tempfile.mkdtemp(), "el.db"))
+    ag = AuthorityGovernor(el=el, dwell_seconds=0.0)
+    before = len(el.query({"source_organ": "AG"}))
+    ag.restore_authority("c", 0.65, earned_in=["dev", "qa"])
+    assert ag.authority("c") == 0.65
+    assert ag.band("c") == "readonly"
+    assert ag.earned_in("c") == ["dev", "qa"]
+    assert len(el.query({"source_organ": "AG"})) == before  # silent — no phantom audit
