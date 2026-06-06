@@ -166,7 +166,7 @@ class Toolsmith:
                 f"TS: cannot promote from state {record['state']!r} "
                 f"(expected 'tested' or 'quarantined')"
             )
-        self._update(tool_id, state="promoted", quarantine_reason=None)
+        self._update(tool_id, state="promoted", quarantine_reason=None, evidence_json=None)
         self._log("promote", tool_id, {"approved_by": approved_by,
                                         "authority_basis": authority_basis})
         result = self._get(tool_id)

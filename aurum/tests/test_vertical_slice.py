@@ -129,6 +129,25 @@ def test_vertical_slice_happy_path(tmp_path):
 # PK deny short-circuits — CA must never be called
 # ---------------------------------------------------------------------------
 
+def _govern(pk, ag, ca, action):
+    """Thin orchestrator: PK hard layer → AG → CA.  Returns (pk_result, ca_result|None).
+
+    CA is never called when PK denies.  This is the wiring contract the test exercises.
+    """
+    pk_result = pk.check(action)
+    if pk_result["decision"] == "deny":
+        return pk_result, None
+    ag_permits = ag.permits(action)
+    signals = [
+        {"signal": "PK", "directive": "proceed", "basis": {}, "constitutional": True},
+        {"signal": "AG", "directive": "proceed" if ag_permits else "contract",
+         "basis": {"authority": ag.authority(action.get("capability_class", "default"))},
+         "constitutional": False},
+    ]
+    ca_result = ca.arbitrate(action, signals)
+    return pk_result, ca_result
+
+
 def test_vertical_slice_pk_deny_short_circuits(tmp_path):
     el, pk, ag, ca, rr = _wired(tmp_path)
 
@@ -137,13 +156,15 @@ def test_vertical_slice_pk_deny_short_circuits(tmp_path):
     pk = PolicyKernel(rules=pk_deny_rules, el=el)
 
     action = _action(action_type="delete_all")
-    pk_result = pk.check(action)
-    assert pk_result["decision"] == "deny"
+    pk_result, ca_result = _govern(pk, ag, ca, action)
 
-    # CA must not be called after a hard deny — verify the guard raises
-    action_with_deny_flag = {**action, "pk_deny": True}
+    # PK denied — orchestrator must not have called CA
+    assert pk_result["decision"] == "deny"
+    assert ca_result is None  # proves CA was never reached
+
+    # Confirm CA's own guard also holds: feeding a pk_deny action directly raises
     with pytest.raises(ArbitrationError):
-        ca.arbitrate(action_with_deny_flag, [])
+        ca.arbitrate({**action, "pk_deny": True}, [])
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +203,10 @@ def test_vertical_slice_rr_diff(tmp_path):
     eid_a = _run("read_file")
     eid_b = _run("write_file")
 
+    # rr.diff() must detect that the inputs changed between the two decisions
     ctx_a = rr.context(eid_a)
     ctx_b = rr.context(eid_b)
-    # Both are full-fidelity; inputs differ (different action_type)
-    assert ctx_a["inputs"]["action_type"] != ctx_b["inputs"]["action_type"]
+    changes = rr.diff(ctx_a, ctx_b)
+    assert "inputs" in changes, f"rr.diff() should report inputs changed; got {changes}"
+    assert changes["inputs"]["a"]["action_type"] == "read_file"
+    assert changes["inputs"]["b"]["action_type"] == "write_file"
