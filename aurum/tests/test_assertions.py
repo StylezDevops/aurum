@@ -81,16 +81,39 @@ def test_AURUM_ERR_001_crypto_continuity():
 
 def test_AURUM_ERR_002_lossless_snapshot():
     _gate("AURUM_ERR_002")
-    # TODO(opus): compress an EL region, then assert lineage() delta count is
-    # identical to pre-compression (no semantic summarisation).
-    raise NotImplementedError("AURUM_ERR_002 body: implement once EL+MGC are built")
+    # LIVE (EL+MGC). Compressing an EL region copies cold rows to the archive but NEVER
+    # deletes from the live ledger, so lineage() delta-count is identical afterwards.
+    import os, tempfile
+    from aurum.durability.el import EvidenceLedger
+    from aurum.durability.mgc import MemoryGarbageCollector
+
+    el = EvidenceLedger(os.path.join(tempfile.mkdtemp(), "el.db"))
+    ev = {"event_id": "", "timestamp": "", "source_organ": "TS",
+          "action_type": "PROMOTION", "object_ids": ["obj_a"],
+          "payload": {"capability_class": "synth"}, "evidence_confidence": 0.9,
+          "evidence_source": "t", "prev_hash": "", "hash": ""}
+    el.append(ev); el.append(dict(ev))
+    before = len(el.lineage("obj_a"))
+    MemoryGarbageCollector(os.path.join(tempfile.mkdtemp(), "mgc.db"),
+                           el=el).compress({"object_id": "obj_a"})
+    assert len(el.lineage("obj_a")) == before, "compression changed the delta count"
+    assert el.verify_chain() is True
 
 
 def test_AURUM_ERR_003_ghost_dependency():
     _gate("AURUM_ERR_003")
-    # TODO(opus): CS.lease('tool_alpha', ttl=300); assert 'tool_alpha' not in
-    # MGC.scan() candidate arrays despite no referencing edges.
-    raise NotImplementedError("AURUM_ERR_003 body: implement once CS+MGC are built")
+    # LIVE (CS+MGC). A CS-leased artifact is skipped from MGC's sweep even with no edges.
+    import os, tempfile
+    from aurum.novel.cs import CausalSimulator
+    from aurum.durability.mgc import MemoryGarbageCollector
+
+    cs = CausalSimulator(os.path.join(tempfile.mkdtemp(), "cs.db"))
+    cs.add_node("tool_alpha", "tool")          # no referencing edges -> looks orphaned
+    cs.lease("tool_alpha", ttl=300)
+    mgc = MemoryGarbageCollector(os.path.join(tempfile.mkdtemp(), "mgc.db"), cs=cs)
+    out = mgc.scan({"skills": ["tool_alpha"], "tools": ["tool_alpha"]})
+    assert "tool_alpha" not in out["archivable"]
+    assert "tool_alpha" not in out["retirable"]
 
 
 def test_AURUM_ERR_004_constitutional_shield():
