@@ -12,7 +12,7 @@ from __future__ import annotations
 # Flip to True as each organ is genuinely implemented.
 BUILT: dict[str, bool] = {
     # Tier 0 spine
-    "PK": False, "BB": False, "TS": False,
+    "PK": True, "BB": True, "TS": True,
     # Tier 0.5 durability / infrastructure
     "EL": True, "RR": True, "MGC": True, "KVE": True,
     "GR": True, "PM": True, "TCM": True,
