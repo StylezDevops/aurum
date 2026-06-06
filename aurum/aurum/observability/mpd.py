@@ -20,7 +20,6 @@ downstream consumers (and EL is append-only), so that loop is deferred until OI/
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -41,16 +40,10 @@ class MemoryPoisoningDetector:
         if self._el is None:
             raise RuntimeError(
                 "MPD is a derived view over EL; an EvidenceLedger is required")
-        rows = self._el._db.execute(
-            "SELECT seq, event_id, source_organ, action_type, object_ids, payload, "
-            "evidence_confidence, timestamp FROM evidence_ledger ORDER BY seq ASC"
-        ).fetchall()
-        return [
-            {"seq": r[0], "event_id": r[1], "source_organ": r[2], "action_type": r[3],
-             "object_ids": json.loads(r[4] or "[]"), "payload": json.loads(r[5] or "{}"),
-             "confidence": r[6], "timestamp": r[7]}
-            for r in rows
-        ]
+        # read THROUGH EL's public surface (never EL._db). EL returns
+        # 'evidence_confidence'; MPD's signatures use the shorter 'confidence' alias.
+        return [{**e, "confidence": e["evidence_confidence"]}
+                for e in self._el.iter_events(ascending=True)]
 
     @staticmethod
     def _is_success(ev: Dict[str, Any]) -> bool:
@@ -166,15 +159,9 @@ class MemoryPoisoningDetector:
             span = (stamps[-1] - stamps[0]) if len(stamps) >= 2 else 0.0
         per_hour = (len(events) / (span / 3600.0)) if span > 0 else 0.0
         # decisions/conflicts are windowed consistently with the ledger counts (their ts
-        # are ISO-8601 UTC, so a lexicographic >= against the cutoff is correct).
-        if cutoff_iso is not None:
-            dec = self._el._db.execute(
-                "SELECT COUNT(*) FROM decisions WHERE ts >= ?", (cutoff_iso,)).fetchone()[0]
-            con = self._el._db.execute(
-                "SELECT COUNT(*) FROM conflicts WHERE ts >= ?", (cutoff_iso,)).fetchone()[0]
-        else:
-            dec = self._el._db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
-            con = self._el._db.execute("SELECT COUNT(*) FROM conflicts").fetchone()[0]
+        # are ISO-8601 UTC, so EL's lexicographic >= against the cutoff is correct).
+        dec = self._el.count_decisions(since=cutoff_iso)
+        con = self._el.count_conflicts(since=cutoff_iso)
         return {"ledger_total": len(events), "by_action_type": by_action,
                 "by_source_organ": by_source, "decisions": dec, "conflicts": con,
                 "span_seconds": span, "events_per_hour": per_hour,

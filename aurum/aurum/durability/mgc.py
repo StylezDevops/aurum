@@ -110,22 +110,11 @@ class MemoryGarbageCollector:
         if self._el is None:
             raise RuntimeError("MGC.compress needs an EvidenceLedger")
         object_id = el_region.get("object_id")
-        if object_id is not None:
-            rows = self._el._db.execute(
-                "SELECT e.seq, e.event_id, e.payload FROM evidence_ledger e "
-                "JOIN el_object_index oi ON oi.seq = e.seq WHERE oi.object_id=?",
-                (object_id,)).fetchall()
-        else:
-            lo, hi = el_region.get("from_seq", 0), el_region.get("to_seq", 0)
-            rows = self._el._db.execute(
-                "SELECT seq, event_id, payload FROM evidence_ledger "
-                "WHERE seq BETWEEN ? AND ?", (lo, hi)).fetchall()
-        n = 0
-        for seq, event_id, payload in rows:
-            self._el._db.execute(
-                "INSERT OR IGNORE INTO evidence_ledger_archive(seq, blob) VALUES (?,?)",
-                (seq, json.dumps({"event_id": event_id, "payload": payload})))
-            n += 1
+        # EL owns its archive table — delegate the structural copy through its public
+        # surface rather than reaching into EL._db.
+        n = self._el.archive_region(object_id=object_id,
+                                    from_seq=el_region.get("from_seq"),
+                                    to_seq=el_region.get("to_seq"))
         # NB: the audit's object_id is namespaced so this meta-event is NOT counted as a
         # delta of the compressed object — compression must not change its lineage.
         self._audit("ARCHIVE", f"mgc:compress:{object_id}", "compress")

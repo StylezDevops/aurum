@@ -14,7 +14,6 @@ dict (as returned by trend()/_snapshots()).
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List
 
 
@@ -32,17 +31,12 @@ class IdentityDriftMonitor:
         if self._el is None:
             raise RuntimeError(
                 "IDM is a derived view over EL; an EvidenceLedger is required")
-        rows = self._el._db.execute(
-            "SELECT snapshot_id, ts, trust, authority, active_rules_json, "
-            "active_goals_json, knowledge_state_hash "
-            "FROM evidence_snapshots ORDER BY ts ASC, rowid ASC"
-        ).fetchall()
+        # read THROUGH EL's public surface (never EL._db); adapt rule/goal lists to sets
         return [
-            {"snapshot_id": r[0], "ts": r[1], "trust": r[2], "authority": r[3],
-             "rules": set(json.loads(r[4] or "[]")),
-             "goals": set(json.loads(r[5] or "[]")),
-             "knowledge": r[6]}
-            for r in rows
+            {"snapshot_id": s["snapshot_id"], "ts": s["ts"], "trust": s["trust"],
+             "authority": s["authority"], "rules": set(s["active_rules"]),
+             "goals": set(s["active_goals"]), "knowledge": s["knowledge_state_hash"]}
+            for s in self._el.snapshots()
         ]
 
     def _resolve(self, version: Any) -> Dict[str, Any]:
