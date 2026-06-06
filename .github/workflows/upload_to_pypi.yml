@@ -3,9 +3,13 @@ name: Publish to PyPI
 # Triggered by CalVer tag pushes from scripts/release.py (e.g. v2026.5.15)
 # Can also be triggered manually from the Actions tab as an escape hatch.
 on:
-  push:
-    tags:
-      - 'v20*'  # CalVer tags: v2026.5.15, v2026.5.15.2, etc.
+  # tag-push publish DISABLED 2026-06 — not actively publishing this fork to
+  # PyPI; this also prevents an accidental CalVer tag from triggering a publish.
+  # Manual-only via workflow_dispatch; restore the push/tags trigger to resume
+  # automatic publishing on CalVer tag pushes.
+  # push:
+  #   tags:
+  #     - 'v20*'  # CalVer tags: v2026.5.15, v2026.5.15.2, etc.
   workflow_dispatch:
     inputs:
       confirm_tag:

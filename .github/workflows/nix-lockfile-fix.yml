@@ -1,13 +1,18 @@
 name: Nix Lockfile Fix
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'package-lock.json'
-      - 'package.json'
-      - 'ui-tui/package.json'
-      - 'apps/desktop/package.json'
+  # auto-fix-on-push DISABLED 2026-06 to cut Actions frequency on this solo fork.
+  # Nix IS used here (flake.nix + nix/), so the workflow is kept — but the
+  # push-triggered auto-fix of main is off; the PR sticky-comment checkbox and
+  # manual dispatch (below) still apply lockfile fixes. Restore this push trigger
+  # to re-enable auto-fixing main when npm package files change.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'package-lock.json'
+  #     - 'package.json'
+  #     - 'ui-tui/package.json'
+  #     - 'apps/desktop/package.json'
   workflow_dispatch:
     inputs:
       pr_number:

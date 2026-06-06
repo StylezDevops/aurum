@@ -1,11 +1,15 @@
 name: Contributor Attribution Check
 
+# DISABLED 2026-06 — solo personal fork, no external contributors, so the
+# AUTHOR_MAP attribution guard is unnecessary. Manual-only via workflow_dispatch;
+# restore the pull_request trigger below to re-enable.
 on:
-  pull_request:
-    branches: [main]
-  # No paths filter — the job must always run so the required check
-  # reports a status (path-gated workflows leave checks "pending" forever
-  # when no matching files change, which blocks merge).
+  workflow_dispatch:
+  # pull_request:
+  #   branches: [main]
+  #   # No paths filter — the job must always run so the required check
+  #   # reports a status (path-gated workflows leave checks "pending" forever
+  #   # when no matching files change, which blocks merge).
 
 permissions:
   contents: read
