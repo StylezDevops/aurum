@@ -157,3 +157,38 @@ def test_mpd_event_rate_window_filters_old_events():
     windowed = MemoryPoisoningDetector(el).governance_event_rate(
         window_seconds=3600 * 24, now=now)
     assert windowed["ledger_total"] == 1  # only the recent event survives the window
+
+
+def test_mpd_event_rate_tolerates_invalid_timestamp():
+    # Qodo #12.1: _epoch() returns None for a non-empty unparsable timestamp; the
+    # window filter must not compare None to a float (TypeError).
+    from datetime import datetime, timezone
+    el = _el()
+    el.append(dict(_ev("bad", action="VOTE"), timestamp="not-a-real-timestamp"))
+    el.append(dict(_ev("good", action="VOTE"), timestamp="2026-06-05T00:00:00+00:00"))
+    now = datetime(2026, 6, 5, 1, 0, 0, tzinfo=timezone.utc)
+    rate = MemoryPoisoningDetector(el).governance_event_rate(
+        window_seconds=3600 * 24, now=now)  # must not raise
+    assert rate["ledger_total"] == 1  # invalid-timestamp event excluded from the window
+
+
+def test_mpd_event_rate_window_honors_window_span_and_decisions():
+    # Qodo #12.2: a windowed call must report a window-consistent span/rate and window
+    # decisions/conflicts too — not all-time counts with an observed-min/max span.
+    from datetime import datetime, timezone
+    el = _el()
+    el.append(dict(_ev("old", action="VOTE"), timestamp="2020-01-01T00:00:00+00:00"))
+    el.append(dict(_ev("new", action="VOTE"), timestamp="2026-06-05T00:30:00+00:00"))
+    # an old decision that must fall outside the 1h window
+    el.log_decision({"action_requested": "x", "final_decision": "allow",
+                     "ts": "2020-01-01T00:00:00+00:00"},
+                    {"trust": 0.5, "authority": 0.5, "active_rules": [],
+                     "active_goals": [], "knowledge_state_hash": "k",
+                     "ts": "2020-01-01T00:00:00+00:00"})
+    now = datetime(2026, 6, 5, 1, 0, 0, tzinfo=timezone.utc)
+    r = MemoryPoisoningDetector(el).governance_event_rate(window_seconds=3600, now=now)
+    assert r["windowed"] is True
+    assert r["span_seconds"] == 3600.0            # honours the requested window
+    assert r["ledger_total"] == 1                 # only the recent event
+    assert r["decisions"] == 0                    # old decision windowed out
+    assert r["events_per_hour"] == 1.0            # 1 event / 1h
