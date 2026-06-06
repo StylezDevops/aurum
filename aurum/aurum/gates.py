@@ -20,6 +20,14 @@ GATES: Dict[str, Tuple[List[str], str]] = {
     "AURUM_ERR_010": (["AG"], "Authority flapping: AG oscillating 0.81/0.79 holds a stable band (dual thresholds + dwell)."),
     "AURUM_ERR_011": (["EL"], "EL fail-safe: with EL.append failing, a consequential action is blocked rather than executed unlogged."),
     "AURUM_ERR_012": (["PK", "AG"], "Owner absence: past gate TTL with no approver, Class-B/C expire to denied, growth pauses, authority never widens."),
-    # 013-020 reserved for the arbitration layer (aurum_arbitration_spec.md), not yet wired.
+    # 013-020 — arbitration layer (aurum_arbitration_spec.md §8).
+    "AURUM_ERR_013": (["CA"], "Arbiter determinism + replay: identical participant directives produce an identical resolution + ConflictRecord, with no model call."),
+    "AURUM_ERR_014": (["CA"], "Caution wins, logged: a Tier-1 contraction with OI/LS proceeding resolves CONTRACT and writes a ConflictRecord naming all participants; Tier-2 never overrides."),
+    "AURUM_ERR_015": (["CA"], "Hard layer not arbitrated: a PK hard-deny / CB-freeze / gated action never enters CA; no proceed can be produced for it."),
+    "AURUM_ERR_016": (["CA"], "Silent contraction forbidden: a contraction with a proceed-signal present always emits a ConflictRecord, even when the outcome equals a deny."),
+    "AURUM_ERR_017": (["CA", "DD"], "Wise-caution vs deadlock: stuck-CONTRACT with risk still elevated → D below flag; same homogeneity with justification abated → D above flag + one escalation."),
+    "AURUM_ERR_018": (["CA", "DD"], "Constitutional exclusion: a permanent contraction whose winner is Core/PK/standing-PM is excluded from DD and never flags deadlock."),
+    "AURUM_ERR_019": (["DD"], "DD never self-resolves: a flagged deadlock escalates only; an attempt to auto-retune DD's own (constitutional) parameters is rejected pre-gate."),
+    "AURUM_ERR_020": (["CA", "DD"], "Escalation dedup: N recurrences of one deadlock signature produce ONE open gate item with a recurrence counter, not N items."),
     "AURUM_ERR_021": (["CAGE"], "Mount jail: a caged turn cannot mount or reach a host path outside the allowlist — deny-by-default; symlink, traversal, and string-prefix escapes are refused (fail closed)."),
 }
