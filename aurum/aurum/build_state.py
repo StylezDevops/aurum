@@ -14,7 +14,7 @@ BUILT: dict[str, bool] = {
     # Tier 0 spine
     "PK": False, "BB": False, "TS": False,
     # Tier 0.5 durability / infrastructure
-    "EL": True, "RR": True, "MGC": True, "KVE": False,
+    "EL": True, "RR": True, "MGC": True, "KVE": True,
     "GR": True, "PM": True, "TCM": True,
     # Tier 1 novel
     "AA": True, "LS": True, "HVP": True, "EG": True,
