@@ -48,7 +48,7 @@ class MemoryPoisoningDetector:
     @staticmethod
     def _is_success(ev: Dict[str, Any]) -> bool:
         p = ev["payload"]
-        return (ev["action_type"] == "PROMOTION"
+        return (ev["action_type"] in ("PROMOTION", "PROMOTE")
                 or p.get("outcome") == "success" or p.get("success") is True)
 
     @staticmethod
