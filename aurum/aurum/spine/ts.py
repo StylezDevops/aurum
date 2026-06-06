@@ -47,10 +47,16 @@ class Toolsmith:
             "  result_json TEXT,"
             "  created_at TEXT NOT NULL,"
             "  updated_at TEXT NOT NULL,"
-            "  quarantine_reason TEXT"
+            "  quarantine_reason TEXT,"
+            "  evidence_json TEXT"
             ");"
             "CREATE INDEX IF NOT EXISTS idx_tools_state ON tools(state);"
         )
+        # Migrate existing DBs that pre-date the evidence_json column.
+        try:
+            self._db.execute("ALTER TABLE tools ADD COLUMN evidence_json TEXT")
+        except sqlite3.OperationalError:
+            pass
         self._db.commit()
 
     # -- helpers ------------------------------------------------------------
@@ -141,8 +147,14 @@ class Toolsmith:
         self._log("test", tool_id, {"result": result})
         return result
 
-    def promote(self, tool: Any, *, approved_by: Optional[str] = None) -> Dict[str, Any]:
-        """Transition to promoted.  HUMAN_GATE — approved_by is required."""
+    def promote(self, tool: Any, *, approved_by: Optional[str] = None,
+                authority_basis: str = "human_review") -> Dict[str, Any]:
+        """Transition to promoted.  HUMAN_GATE — approved_by is required.
+
+        authority_basis: what grants the approval — e.g. "human_review",
+        "ls_canary", "automated_gate".  Stored in the EL event so history records
+        WHO approved and UNDER WHAT AUTHORITY as separate auditable fields.
+        """
         if approved_by is None:
             raise PermissionError("TS.promote is HUMAN_GATE (approved_by required)")
         tool_id = (
@@ -155,18 +167,28 @@ class Toolsmith:
                 f"(expected 'tested' or 'quarantined')"
             )
         self._update(tool_id, state="promoted", quarantine_reason=None)
-        self._log("promote", tool_id, {"approved_by": approved_by})
+        self._log("promote", tool_id, {"approved_by": approved_by,
+                                        "authority_basis": authority_basis})
         result = self._get(tool_id)
         assert result is not None
         return result
 
-    def quarantine(self, tool_id: str, reason: str) -> None:
-        """Move tool to quarantined state (requires per-invocation approval until recovered)."""
-        self._require_tool(tool_id)
-        self._update(tool_id, state="quarantined", quarantine_reason=reason)
-        self._log("quarantine", tool_id, {"reason": reason})
+    def quarantine(self, tool_id: str, reason: str,
+                   evidence: Optional[Any] = None) -> None:
+        """Move tool to quarantined state.
 
-    def unquarantine(self, tool_id: str, *, approved_by: Optional[str] = None) -> None:
+        evidence: structured data backing the reason — e.g. {"reliability": 0.71,
+        "prior": 0.98, "sample_window": 500}.  Stored verbatim; makes the decision
+        replayable rather than just auditable.
+        """
+        self._require_tool(tool_id)
+        evidence_json = json.dumps(evidence, ensure_ascii=False) if evidence is not None else None
+        self._update(tool_id, state="quarantined", quarantine_reason=reason,
+                     evidence_json=evidence_json)
+        self._log("quarantine", tool_id, {"reason": reason, "evidence": evidence})
+
+    def unquarantine(self, tool_id: str, *, approved_by: Optional[str] = None,
+                     authority_basis: str = "human_review") -> None:
         """Lift quarantine back to 'tested'.  HUMAN_GATE — approved_by is required."""
         if approved_by is None:
             raise PermissionError("TS.unquarantine is HUMAN_GATE (approved_by required)")
@@ -175,8 +197,9 @@ class Toolsmith:
             raise ValueError(
                 f"TS: tool {tool_id!r} is not quarantined (state={record['state']!r})"
             )
-        self._update(tool_id, state="tested", quarantine_reason=None)
-        self._log("unquarantine", tool_id, {"approved_by": approved_by})
+        self._update(tool_id, state="tested", quarantine_reason=None, evidence_json=None)
+        self._log("unquarantine", tool_id, {"approved_by": approved_by,
+                                             "authority_basis": authority_basis})
 
     def deprecate(self, tool_id: str) -> None:
         """Mark a tool as deprecated (soft-delete)."""
@@ -201,3 +224,10 @@ class Toolsmith:
 
     def get_tool(self, tool_id: str) -> Optional[Dict[str, Any]]:
         return self._get(tool_id)
+
+    def get_evidence(self, tool_id: str) -> Optional[Any]:
+        """Return the quarantine evidence for tool_id, or None if none was recorded."""
+        record = self._get(tool_id)
+        if record is None or record.get("evidence_json") is None:
+            return None
+        return json.loads(record["evidence_json"])
