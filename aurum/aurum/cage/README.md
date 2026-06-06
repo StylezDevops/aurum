@@ -56,3 +56,17 @@ brokered **per request** from the host env and passed to the container on **stdi
 as `-e`/argv — so `docker inspect` shows no secret. `broker.broker_secrets()` is the single
 seam to swap the host env for OneCLI / a secret manager later. If no provider secret can be
 brokered, the turn is refused (never run unauthenticated).
+
+## Network egress
+
+The cage **does not block the internet** — the agent needs it (web, APIs, its own LLM),
+and on cloud runtimes (ACI / Fargate / ECS) egress is the platform's job (Azure
+Firewall/NSG, AWS security groups, private endpoints), not docker's. So containment is
+**not a network cage**; it is **"nothing to steal"**: no durable credential is ever
+resident in the cage (secrets ride stdin per request, above), so a compromised container
+that `curl`s out has no key to exfiltrate.
+
+For docker-host deployments that *do* want an egress posture, set `AURUM_CAGE_NETWORK` to
+pass `docker --network <value>` (e.g. a custom egress-firewalled network, or `none`).
+Unset = docker default. The "nothing to steal" guarantee holds either way — see
+`tests/test_cage_egress.py`.

@@ -35,6 +35,15 @@ OUT_END = "---AURUM_OUTPUT_END---"
 
 CAGE_IMAGE = os.getenv("AURUM_CAGE_IMAGE", "aurum-agent:latest")
 PROXY_KEY_ENV = "GATEWAY_PROXY_KEY"
+# Egress posture is a DEPLOYMENT decision, not hardcoded here. On cloud runtimes
+# (ACI / Fargate / ECS) egress is governed by the platform (Azure Firewall/NSG, AWS
+# security groups, private endpoints). For docker-host deployments, set
+# AURUM_CAGE_NETWORK to pass `docker --network <value>` (e.g. a custom egress-firewalled
+# network, or "none"). Unset = docker default. The containment that actually matters —
+# no durable secret resident in the cage — holds regardless of the network (secrets ride
+# stdin; see container_input / build_docker_argv), so a compromised container has nothing
+# to exfiltrate even with open egress.
+CAGE_NETWORK_ENV = "AURUM_CAGE_NETWORK"
 
 # Secret env names the agent needs brokered per-request (provider auth). Non-secret
 # config (base_url, model) is passed plainly; only these are routed via stdin.
@@ -131,22 +140,43 @@ def broker_secrets(names: tuple = SECRET_ENV_NAMES) -> Dict[str, str]:
 
 # ── the caged runner (the part that needs docker) ────────────────────────────
 
-async def docker_runner(
-    ci: Dict[str, Any], mount_args: List[str], plain_env: Dict[str, str]
-) -> Dict[str, Any]:
-    """Run one turn in `docker run --rm`. Secrets are NOT here — they're inside `ci`
-    (stdin). Only non-secret config (base_url, model) is passed as `-e`."""
+def build_docker_argv(
+    mount_args: List[str],
+    plain_env: Dict[str, str],
+    network: Optional[str] = None,
+    image: Optional[str] = None,
+) -> List[str]:
+    """Build the `docker run` argv. Pure + testable (no subprocess).
+
+    INVARIANT: only non-secret config (base_url, model) is ever passed as `-e`.
+    Secrets travel via stdin inside ContainerInput, NEVER here — so they never appear
+    in argv / `docker inspect` / `ps`. `network` is an optional `--network` passthrough
+    (deployment's egress choice; see CAGE_NETWORK_ENV).
+    """
     argv: List[str] = ["docker", "run", "--rm", "-i"]
     # Run as the host user where the platform supports it, so files written to the
     # RW group mount are host-owned (best effort; Docker Desktop on Windows handles
     # ownership itself and has no getuid).
     if hasattr(os, "getuid"):
         argv += ["--user", f"{os.getuid()}:{os.getgid()}"]
+    if network:
+        argv += ["--network", network]
     for k, v in (plain_env or {}).items():
         if v:
             argv += ["-e", f"{k}={v}"]      # non-secret config only
-    argv += mount_args
-    argv.append(CAGE_IMAGE)
+    argv += list(mount_args)
+    argv.append(image or CAGE_IMAGE)
+    return argv
+
+
+async def docker_runner(
+    ci: Dict[str, Any], mount_args: List[str], plain_env: Dict[str, str]
+) -> Dict[str, Any]:
+    """Run one turn in `docker run --rm`. Secrets are NOT here — they're inside `ci`
+    (stdin). Only non-secret config (base_url, model) is passed as `-e`."""
+    argv = build_docker_argv(
+        mount_args, plain_env, network=os.environ.get(CAGE_NETWORK_ENV)
+    )
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv,
