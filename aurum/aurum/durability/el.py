@@ -10,6 +10,7 @@ from, so the append-only triggers stay absolute.
 Critical infrastructure: the log leads the side effect (fail-safe), hot-path reads
 are indexed (generated column on capability_class).
 """
+# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import json

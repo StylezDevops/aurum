@@ -91,7 +91,7 @@ These cannot be completed without operator credentials, by their nature:
 
 ## Notes
 
-- Git on the `aurum` repo uses a **local** identity `StylezDevops / 94297031+StylezDevops@users.noreply.github.com`.
+- Git on the `aurum` repo uses a **local** identity `StylezDevops`.
   Nothing is pushed.
 - Dev `.venv` lacks the dev test deps by default. Install pinned and run with the
   Windows-compatible timeout method:

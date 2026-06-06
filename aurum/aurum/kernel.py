@@ -20,6 +20,7 @@ Fail-safe posture (tiered — the core safety contract, see aurum_organs_spec.md
 
 Owner absence / degraded mode shrinks the agent, never grows it.
 """
+# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import uuid
