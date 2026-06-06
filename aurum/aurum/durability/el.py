@@ -94,6 +94,14 @@ CREATE TABLE IF NOT EXISTS evidence_snapshots (
     knowledge_state_hash TEXT NOT NULL,
     environment_hash     TEXT
 );
+-- IDM walks snapshots oldest-first (EL.snapshots); index the order column.
+CREATE INDEX IF NOT EXISTS idx_evidence_snapshots_ts ON evidence_snapshots(ts);
+-- NOTE (schema design, AURUM_ERR substrate): active_rules_json / active_goals_json here,
+-- and participants_json / risk_snapshot_json in CA's ca_conflicts table, are OPAQUE blobs —
+-- read-and-parsed in Python (IDM drift, DD divergence) but NEVER used in a SQL WHERE/GROUP BY,
+-- so they correctly stay JSON. The only payload field ever SQL-queried is capability_class,
+-- already promoted to a STORED generated column + index on evidence_ledger. Promote a JSON
+-- field to a generated/indexed column the moment a query starts filtering on it.
 
 CREATE TABLE IF NOT EXISTS decisions (
     decision_id          TEXT PRIMARY KEY,
@@ -108,6 +116,8 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_ts       ON decisions(ts);
 CREATE INDEX IF NOT EXISTS idx_decisions_snapshot ON decisions(evidence_snapshot_id);
+-- el_seq is queried by RR.replay (decision_for_el_seq) — index the WHERE column.
+CREATE INDEX IF NOT EXISTS idx_decisions_el_seq   ON decisions(el_seq);
 
 CREATE TABLE IF NOT EXISTS conflicts (
     conflict_id      TEXT PRIMARY KEY,
@@ -374,6 +384,106 @@ class EvidenceLedger:
         row = self._db.execute(
             "SELECT seq FROM evidence_ledger ORDER BY seq DESC LIMIT 1").fetchone()
         return row[0] if row else None
+
+    # -- public read surface (consumers read THROUGH these, never via _db) ----
+    # These exist so derived views (RR/IDM/MPD) and MGC never reach into EL's
+    # private connection; see organ_dependencies.md. Each returns the seq, so a
+    # caller can order/link without a second query.
+    _EVENT_COLS = ("seq,event_id,source_organ,action_type,object_ids,payload,"
+                   "evidence_confidence,evidence_source,prev_hash,hash,timestamp")
+
+    @staticmethod
+    def _event_full(r) -> Dict[str, Any]:
+        return {"seq": r[0], "event_id": r[1], "source_organ": r[2], "action_type": r[3],
+                "object_ids": json.loads(r[4] or "[]"), "payload": json.loads(r[5] or "{}"),
+                "evidence_confidence": r[6], "evidence_source": r[7], "prev_hash": r[8],
+                "hash": r[9], "timestamp": r[10]}
+
+    def get_event(self, event_id: str) -> Optional[Dict[str, Any]]:
+        """Full ledger row (incl. seq) for an event_id, or None — for RR.replay."""
+        row = self._db.execute(
+            f"SELECT {self._EVENT_COLS} FROM evidence_ledger WHERE event_id=?",
+            (event_id,)).fetchone()
+        return self._event_full(row) if row else None
+
+    def iter_events(self, ascending: bool = True) -> List[Dict[str, Any]]:
+        """All ledger events (incl. seq), seq-ordered — for derived views (MPD)."""
+        order = "ASC" if ascending else "DESC"
+        rows = self._db.execute(
+            f"SELECT {self._EVENT_COLS} FROM evidence_ledger ORDER BY seq {order}"
+        ).fetchall()
+        return [self._event_full(r) for r in rows]
+
+    def events_for_object(self, object_id: str) -> List[Dict[str, Any]]:
+        """Ledger rows touching object_id, via the object index — for MGC."""
+        rows = self._db.execute(
+            "SELECT e.seq,e.event_id,e.source_organ,e.action_type,e.object_ids,e.payload,"
+            "e.evidence_confidence,e.evidence_source,e.prev_hash,e.hash,e.timestamp "
+            "FROM evidence_ledger e JOIN el_object_index oi ON oi.seq = e.seq "
+            "WHERE oi.object_id=? ORDER BY e.seq ASC", (object_id,)).fetchall()
+        return [self._event_full(r) for r in rows]
+
+    def snapshots(self) -> List[Dict[str, Any]]:
+        """Governance-state snapshots oldest-first — for IDM drift."""
+        rows = self._db.execute(
+            "SELECT snapshot_id,ts,trust,authority,active_rules_json,active_goals_json,"
+            "knowledge_state_hash,environment_hash FROM evidence_snapshots "
+            "ORDER BY ts ASC, rowid ASC").fetchall()
+        return [{"snapshot_id": r[0], "ts": r[1], "trust": r[2], "authority": r[3],
+                 "active_rules": json.loads(r[4] or "[]"),
+                 "active_goals": json.loads(r[5] or "[]"),
+                 "knowledge_state_hash": r[6], "environment_hash": r[7]} for r in rows]
+
+    def decision_for_el_seq(self, seq: int) -> Optional[Dict[str, Any]]:
+        """The decision + its evidence snapshot linked to a ledger seq — for RR.replay."""
+        row = self._db.execute(
+            "SELECT d.decision_id,d.final_decision,d.authority_score,d.reason_json,"
+            "s.active_rules_json,s.active_goals_json,s.knowledge_state_hash,"
+            "s.environment_hash FROM decisions d "
+            "JOIN evidence_snapshots s ON d.evidence_snapshot_id = s.snapshot_id "
+            "WHERE d.el_seq=?", (seq,)).fetchone()
+        if row is None:
+            return None
+        return {"decision_id": row[0], "final_decision": row[1], "authority_score": row[2],
+                "reason": json.loads(row[3] or "{}"),
+                "active_rules": json.loads(row[4] or "[]"),
+                "active_goals": json.loads(row[5] or "[]"),
+                "knowledge_state_hash": row[6], "environment_hash": row[7]}
+
+    def count_decisions(self, since: Optional[str] = None) -> int:
+        if since is None:
+            return self._db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+        return self._db.execute(
+            "SELECT COUNT(*) FROM decisions WHERE ts >= ?", (since,)).fetchone()[0]
+
+    def count_conflicts(self, since: Optional[str] = None) -> int:
+        if since is None:
+            return self._db.execute("SELECT COUNT(*) FROM conflicts").fetchone()[0]
+        return self._db.execute(
+            "SELECT COUNT(*) FROM conflicts WHERE ts >= ?", (since,)).fetchone()[0]
+
+    def archive_region(self, object_id: Optional[str] = None,
+                       from_seq: Optional[int] = None,
+                       to_seq: Optional[int] = None) -> int:
+        """Copy a cold region to the archive table (structural, lossless — the live
+        ledger is never deleted from). EL OWNS its archive table, so MGC.compress
+        delegates here rather than reaching into _db. Returns rows archived."""
+        if object_id is not None:
+            rows = self._db.execute(
+                "SELECT e.seq, e.event_id, e.payload FROM evidence_ledger e "
+                "JOIN el_object_index oi ON oi.seq = e.seq WHERE oi.object_id=?",
+                (object_id,)).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT seq, event_id, payload FROM evidence_ledger WHERE seq BETWEEN ? AND ?",
+                (from_seq or 0, to_seq or 0)).fetchall()
+        n = 0
+        for seq, event_id, payload in rows:
+            self._db.execute(
+                "INSERT OR IGNORE INTO evidence_ledger_archive(seq, blob) VALUES (?,?)",
+                (seq, json.dumps({"event_id": event_id, "payload": payload})))
+            n += 1
+        return n
 
     def _row_to_event(self, r) -> ELEvent:
         # seq,event_id,timestamp,source_organ,action_type,object_ids,payload,

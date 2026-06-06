@@ -16,7 +16,6 @@ set doesn't yet define — deferred rather than smuggled onto an unrelated actio
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Callable, Dict, List, Optional, TypedDict
 
 from ..types import EnvironmentFidelity
@@ -38,37 +37,17 @@ class ReproducibilityRunner:
         self._el = el
         self._api_checker = api_checker
 
-    # -- EL access (read-only) ---------------------------------------------
+    # -- EL access (read-only, through EL's public surface) ----------------
     def _event(self, event_id: str) -> Dict[str, Any]:
         if self._el is None:
             raise RuntimeError("RR pairs with EL; an EvidenceLedger is required")
-        row = self._el._db.execute(
-            "SELECT seq, event_id, source_organ, action_type, object_ids, payload, "
-            "evidence_confidence, timestamp FROM evidence_ledger WHERE event_id=?",
-            (event_id,),
-        ).fetchone()
-        if row is None:
+        ev = self._el.get_event(event_id)
+        if ev is None:
             raise KeyError(f"RR: no EL event {event_id!r}")
-        return {"seq": row[0], "event_id": row[1], "source_organ": row[2],
-                "action_type": row[3], "object_ids": json.loads(row[4] or "[]"),
-                "payload": json.loads(row[5] or "{}"), "confidence": row[6],
-                "timestamp": row[7]}
+        return ev
 
     def _linked_decision(self, seq: int) -> Optional[Dict[str, Any]]:
-        row = self._el._db.execute(
-            "SELECT d.decision_id, d.final_decision, d.authority_score, d.reason_json, "
-            "s.active_rules_json, s.active_goals_json, s.knowledge_state_hash, "
-            "s.environment_hash FROM decisions d "
-            "JOIN evidence_snapshots s ON d.evidence_snapshot_id = s.snapshot_id "
-            "WHERE d.el_seq=?", (seq,),
-        ).fetchone()
-        if row is None:
-            return None
-        return {"decision_id": row[0], "final_decision": row[1],
-                "authority_score": row[2], "reason": json.loads(row[3] or "{}"),
-                "active_rules": json.loads(row[4] or "[]"),
-                "active_goals": json.loads(row[5] or "[]"),
-                "knowledge_state_hash": row[6], "environment_hash": row[7]}
+        return self._el.decision_for_el_seq(seq)
 
     # -- public API ---------------------------------------------------------
     def context(self, event_id: str) -> Dict[str, Any]:
