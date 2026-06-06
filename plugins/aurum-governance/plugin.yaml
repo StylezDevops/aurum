@@ -1,0 +1,7 @@
+name: aurum-governance
+version: 1.0.0
+description: "Routes every tool call through the Aurum governance spine (PK → AG → CA → EL) before it executes. Fail-closed: blocks on policy deny, gate, or governance fault. Active only when AURUM_GOVERNANCE=1 (set by the cage entrypoint)."
+author: "24 Karat Recordings (Aurum)"
+hooks:
+  - pre_tool_call
+  - post_tool_call

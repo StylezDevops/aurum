@@ -75,6 +75,46 @@ def _seed_soul(hermes_home: str, assistant_name) -> None:
         pass  # non-fatal: identity is a nicety, not required to answer one message
 
 
+def _ensure_plugin_enabled(hermes_home: str, plugin_name: str) -> None:
+    """Idempotently add `plugin_name` to `plugins.enabled` in HERMES_HOME/config.yaml.
+
+    Hermes plugins are opt-in via the `plugins.enabled` allow-list
+    (hermes_cli.plugins._get_enabled_plugins, read from get_config_path() =
+    HERMES_HOME/config.yaml). The cage must enable aurum-governance so the governance
+    hook actually loads. Seed-merge, never clobber other settings; non-fatal on error.
+    """
+    try:
+        import yaml  # PyYAML is a core Hermes dependency
+    except Exception:
+        return
+    cfg_path = os.path.join(hermes_home, "config.yaml")
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    except OSError:
+        cfg = {}
+    except Exception:
+        return  # malformed config — don't risk clobbering it
+    if not isinstance(cfg, dict):
+        return
+    plugins = cfg.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = {}
+    enabled = plugins.get("enabled")
+    if not isinstance(enabled, list):
+        enabled = []
+    if plugin_name in enabled:
+        return  # already enabled — idempotent no-op
+    enabled.append(plugin_name)
+    plugins["enabled"] = enabled
+    cfg["plugins"] = plugins
+    try:
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
+    except OSError:
+        pass  # non-fatal: governance hook simply won't load this run
+
+
 def main() -> int:
     try:
         inp = json.loads(sys.stdin.read() or "{}")
@@ -90,6 +130,7 @@ def main() -> int:
 
     os.makedirs(HERMES_HOME, exist_ok=True)
     _seed_soul(HERMES_HOME, inp.get("assistantName"))
+    _ensure_plugin_enabled(HERMES_HOME, "aurum-governance")
 
     cmd = [sys.executable, HERMES_CLI, "-q", prompt, "--provider", "openrouter", "--quiet"]
     base_url = os.environ.get("ANTHROPIC_BASE_URL")
@@ -126,6 +167,10 @@ def main() -> int:
     # sandbox-tested proposal for human review — never activate a tool. See
     # tools/toolsmith.py.
     env["AURUM_TOOLSMITH"] = "1"
+    # Route every tool call through the governance spine (PK → AG → CA → EL) before it
+    # executes, via the aurum-governance pre_tool_call hook. Fail-closed: blocks on policy
+    # deny, gate, or governance fault. See plugins/aurum-governance + aurum.kernel.
+    env["AURUM_GOVERNANCE"] = "1"
 
     cwd = GROUP_DIR if os.path.isdir(GROUP_DIR) else "/opt/hermes"
     # No timeout here — the cage owns the wall-clock timeout and kills the container.
