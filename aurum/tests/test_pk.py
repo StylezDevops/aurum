@@ -44,6 +44,14 @@ def test_check_default_allow():
     assert r["rule_id"] is None
 
 
+def test_check_non_dict_raises():
+    pk = _pk()
+    with pytest.raises(TypeError, match="must be a dict"):
+        pk.check(None)
+    with pytest.raises(TypeError, match="must be a dict"):
+        pk.check("action_string")
+
+
 def test_check_explicit_deny_rule():
     pk = _pk(rules=[{"rule_id": "r1", "action_type": "delete_all", "decision": "deny",
                       "reason": "forbidden"}])
@@ -59,6 +67,15 @@ def test_check_needs_gate_rule():
     assert r["decision"] == "needs_gate"
     # A gate item should have been created
     assert len(pk.open_gates()) == 1
+
+
+def test_check_needs_gate_no_duplicate_on_repeated_call():
+    """Calling check() twice for the same needs_gate rule must not create two gates."""
+    pk = _pk(rules=[{"rule_id": "r2", "action_type": "promote_tool",
+                      "decision": "needs_gate", "gate_class": "B", "ttl_seconds": 60}])
+    pk.check(_action("promote_tool"))
+    pk.check(_action("promote_tool"))
+    assert len(pk.open_gates()) == 1, "repeated check() must not duplicate the gate"
 
 
 def test_check_rule_not_matched_for_different_action():
@@ -135,6 +152,31 @@ def test_check_chain_exfiltration_denied():
     assert r["decision"] == "deny"
     assert r["rule_id"] == "pk:chain-exfiltration"
     assert "secret_read" in r["reason"] or "external_write" in r["reason"]
+
+
+def test_check_chain_all_paths_recorded_not_just_first():
+    """All taint paths in a multi-exfil chain must be denied and recorded, not just the first."""
+    pk = _pk()
+    # Two independent exfil paths in one chain.
+    chain = [
+        _action("secret_read"),
+        _action("external_write"),    # first sink
+        _action("pii_read"),
+        _action("network_send"),      # second sink — accumulated sources include both
+    ]
+    r = pk.check_chain(chain, {})
+    assert r["decision"] == "deny"
+
+    # Re-submit a chain that ONLY contains the second path — must match prior denial,
+    # not be treated as novel exfiltration.  Before the fix, only the first path was
+    # recorded, so this chain would get rule_id='pk:chain-exfiltration' instead of
+    # 'pk:prior-denial-taint-path'.
+    chain2 = [_action("secret_read"), _action("pii_read"), _action("network_send")]
+    r2 = pk.check_chain(chain2, {})
+    assert r2["decision"] == "deny"
+    assert r2["rule_id"] == "pk:prior-denial-taint-path", (
+        "second taint path must be in _denied_intents after the first check_chain call"
+    )
 
 
 def test_check_chain_aggregate_cap():

@@ -104,12 +104,18 @@ class BlackBox:
         pm_id: str = body["id"]
         body_json = json.dumps(body, sort_keys=True, ensure_ascii=False)
         signature = _sign(body_json)
-        self._db.execute(
-            "INSERT OR REPLACE INTO postmortems"
-            " (id, timestamp, body_json, signature, quarantined)"
-            " VALUES (?, ?, ?, ?, 0)",
-            (pm_id, body["timestamp"], body_json, signature),
-        )
+        try:
+            self._db.execute(
+                "INSERT INTO postmortems"
+                " (id, timestamp, body_json, signature, quarantined)"
+                " VALUES (?, ?, ?, ?, 0)",
+                (pm_id, body["timestamp"], body_json, signature),
+            )
+        except sqlite3.IntegrityError:
+            raise ValueError(
+                f"BB: postmortem id {pm_id!r} already exists — "
+                "BB is append-only; use a distinct id to record a new postmortem"
+            )
         self._db.commit()
         self._log_el("write", pm_id, {"redacted": self._pk is not None})
         return pm_id
