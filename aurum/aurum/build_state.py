@@ -15,7 +15,7 @@ BUILT: dict[str, bool] = {
     "PK": False, "BB": False, "TS": False,
     # Tier 0.5 durability / infrastructure
     "EL": True, "RR": True, "MGC": False, "KVE": False,
-    "GR": False, "PM": False, "TCM": False,
+    "GR": True, "PM": False, "TCM": False,
     # Tier 1 novel
     "AA": False, "LS": False, "HVP": False, "EG": False,
     "CS": True, "AG": False, "OI": False,
