@@ -38,13 +38,13 @@ def _import_governance():
     """
     try:
         from aurum.kernel import GovernanceKernel
-        from aurum.action_map import CONSEQUENTIAL, risk_tier, to_action
+        from aurum.action_map import SAFE_READ, risk_tier, to_action
     except ImportError:
         from aurum.aurum.kernel import GovernanceKernel  # type: ignore[no-redef]
         from aurum.aurum.action_map import (  # type: ignore[no-redef]
-            CONSEQUENTIAL, risk_tier, to_action,
+            SAFE_READ, risk_tier, to_action,
         )
-    return GovernanceKernel, to_action, risk_tier, CONSEQUENTIAL
+    return GovernanceKernel, to_action, risk_tier, SAFE_READ
 
 
 def _enabled() -> bool:
@@ -113,18 +113,25 @@ def _on_post_tool_call(
     status: str = "",
     **_: Any,
 ) -> None:
-    """On a consequential tool error, record a redacted postmortem (failure → fix loop).
-    Best-effort; never raises."""
+    """Feed the tool's OUTCOME into the OI→BB→AG loop (proxy path). A failed/errored
+    consequential outcome reflexively demotes the class + banks a BB lesson; a successful
+    one is HELD (proxy success never promotes). Skips pure reads. Best-effort; never raises.
+    """
     if not _enabled():
         return
-    if status not in {"error", "failed"} and not _looks_like_error(result):
-        return
     try:
-        _, to_action, risk_tier, CONSEQUENTIAL = _import_governance()
-        if risk_tier(tool_name) != CONSEQUENTIAL:
-            return
+        _, to_action, risk_tier, SAFE_READ = _import_governance()
+        if risk_tier(tool_name) == SAFE_READ:
+            return  # side-effect-free reads don't move authority
         action = to_action(tool_name, args if isinstance(args, dict) else {})
-        _get_kernel().record_failure(action, _result_text(result))
+        errored = status in {"error", "failed"} or _looks_like_error(result)
+        task_result = {
+            "completed": not errored,
+            "proxy_satisfied": not errored,
+            "quality": 0.3 if errored else 1.0,
+            "error": _result_text(result) if errored else None,
+        }
+        _get_kernel().observe_outcome(action, task_result)
     except Exception as exc:
         logger.debug("aurum-governance post_tool_call note skipped: %s", exc)
 

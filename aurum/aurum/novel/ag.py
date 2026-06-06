@@ -37,6 +37,8 @@ _RANK = {name: i for i, (name, _, _) in enumerate(reversed(_BANDS))}  # advisory
 # action_class -> the minimum band it requires
 _ACTION_BAND = {"commit_outward": "full", "code_edit": "code", "propose": "readonly",
                 "advise": "advisory"}
+# Land just under a band's demote line so a single bad outcome drops exactly one band.
+_DEMOTE_EPSILON = 1e-3
 
 
 def _clamp01(x: float) -> float:
@@ -137,6 +139,35 @@ class AuthorityGovernor:
         self._record_env(capability_class, env)
         if prev != value:
             self._audit(capability_class, value, env)
+
+    def apply_outcome(self, capability_class: str, *, good: bool, grounded: bool,
+                      environment: Optional[str] = None) -> float:
+        """Outcome-driven authority move — the OI→AG loop primitive. ASYMMETRIC BY DESIGN
+        (see outcome_gated_authority_design.md); the asymmetry is the whole safety of it:
+
+          bad outcome  → DEMOTE one band, immediately, NO grounding required (a reflex —
+                         contraction is always safe). Repeated bad outcomes compound toward
+                         the floor.
+          good outcome → PROMOTE only if `grounded` (out-of-loop / human-confirmed), and
+                         then only by a small capped step (slow rise via existing kinetics).
+                         A good-but-UNGROUNDED (proxy "it worked") outcome NEVER promotes —
+                         returns unchanged. This is the forbidden-feedback-loop guard:
+                         success the agent itself reports must not widen its own authority.
+
+        Uses the existing band structure + recovery kinetics; does NOT alter the multi-signal
+        scoring (_target/_contributions) or the kinetics constants — additive outcome path.
+        Returns the resulting authority for the class."""
+        cur = self.authority(capability_class)
+        if not good:
+            idx = self._band_idx.get(capability_class, len(_BANDS) - 1)
+            demote_to = _BANDS[idx][2] - _DEMOTE_EPSILON  # just under this band's demote line
+            self.set_authority(capability_class, min(cur, demote_to), environment=environment)
+            return self.authority(capability_class)
+        if not grounded:
+            return cur  # CONSTITUTIONAL: never promote on ungrounded/proxy success
+        gain = min(self._k["rise_rate"], self._k["max_gain_per_window"])
+        self.set_authority(capability_class, cur + gain, environment=environment)
+        return self.authority(capability_class)
 
     # -- provenance helpers (additive; never touch scoring) -----------------
     @staticmethod
