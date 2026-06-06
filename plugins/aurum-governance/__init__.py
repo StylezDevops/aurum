@@ -74,15 +74,29 @@ def _on_pre_tool_call(
     args: Optional[Dict[str, Any]] = None,
     **_: Any,
 ) -> Optional[Dict[str, str]]:
-    """Govern a tool call. Return None to allow, a block dict to refuse."""
-    if not _enabled():
-        return None
+    """Govern a tool call. Return None to allow, a block dict to refuse.
+
+    This function MUST NOT raise. PluginManager.invoke_hook swallows a throwing
+    callback (logs + skips it), which would silently fall OPEN — bypassing
+    governance. So the ENTIRE body (including the enabled-check and imports) is
+    wrapped: any unexpected error fails CLOSED while governance is engaged.
+    """
     try:
+        if not _enabled():
+            return None
         _, to_action, _, _ = _import_governance()
         action = to_action(tool_name, args if isinstance(args, dict) else {})
         decision = _get_kernel().govern(action)
-    except Exception as exc:  # last-resort guard: block loudly (fail-safe posture)
-        logger.error("aurum-governance kernel error on %s: %s", tool_name, exc)
+        if decision.allow:
+            return None
+        return {"action": "block", "message": f"aurum-governance: {decision.reason}"}
+    except Exception as exc:  # last-resort guard — never let the hook fall open
+        logger.error("aurum-governance fault on %s: %s", tool_name, exc)
+        # If governance isn't actually engaged, don't block (avoid bricking a
+        # non-governed session on an unrelated error).
+        if os.environ.get("AURUM_GOVERNANCE") != "1" or \
+                os.environ.get("AURUM_GOVERNANCE_DISABLE", "").lower() in {"1", "true", "yes", "on"}:
+            return None
         return {
             "action": "block",
             "message": (
@@ -90,9 +104,6 @@ def _on_pre_tool_call(
                 f"(fail-closed). Set AURUM_GOVERNANCE_DISABLE=1 to bypass. ({exc})"
             ),
         }
-    if decision.allow:
-        return None
-    return {"action": "block", "message": f"aurum-governance: {decision.reason}"}
 
 
 def _on_post_tool_call(
