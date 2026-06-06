@@ -146,3 +146,82 @@ def test_degraded_event_is_logged(tmp_path):
     events = k.el.query({"action_type": "GOVERNANCE_DECISION"})
     assert any(e["payload"].get("outcome") == "degraded" for e in events), \
         "degraded mode must be loudly flagged to EL, never silent"
+
+
+# ---------------------------------------------------------------------------
+# OI -> BB -> AG outcome loop (asymmetric)
+# ---------------------------------------------------------------------------
+
+def test_observe_outcome_bad_demotes_and_logs(tmp_path):
+    k = _k(tmp_path)
+    cc = "file_write"
+    before = k.ag.band(cc)
+    k.observe_outcome(to_action("write_file", {"path": "/x"}),
+                      {"completed": False, "error": "boom"})
+    assert k.ag.band(cc) != before  # reflex demote
+    events = k.el.query({"action_type": "GOVERNANCE_DECISION"})
+    assert any(e["payload"].get("outcome") == "outcome_demote" for e in events)
+
+
+def test_observe_outcome_good_proxy_holds(tmp_path):
+    """Good PROXY outcome must NOT change authority (no promote on proxy)."""
+    k = _k(tmp_path)
+    cc = "file_write"
+    before = k.ag.authority(cc)
+    for _ in range(10):
+        k.observe_outcome(to_action("write_file", {"path": "/x"}),
+                          {"completed": True, "quality": 1.0})
+    assert k.ag.authority(cc) == before
+    events = k.el.query({"action_type": "GOVERNANCE_DECISION"})
+    assert any(e["payload"].get("outcome") == "outcome_hold" for e in events)
+
+
+def test_record_outcome_verdict_human_good_promotes(tmp_path):
+    k = _k(tmp_path)
+    cc = "file_write"
+    before = k.ag.authority(cc)
+    k.record_outcome_verdict("task-1", cc, satisfied=True)
+    assert k.ag.authority(cc) > before  # only human-grounded good promotes
+
+
+def test_record_outcome_verdict_human_bad_demotes(tmp_path):
+    k = _k(tmp_path)
+    cc = "file_write"
+    before = k.ag.band(cc)
+    k.record_outcome_verdict("task-2", cc, satisfied=False)
+    assert k.ag.band(cc) != before
+
+
+def test_constitutional_only_human_promotes_never_proxy(tmp_path):
+    """The whole point: a stream of good proxy outcomes never raises authority;
+    only an out-of-loop human verdict does."""
+    k = _k(tmp_path)
+    cc = "exec"
+    start = k.ag.authority(cc)
+    for _ in range(25):
+        k.observe_outcome(to_action("terminal", {"command": "echo hi"}),
+                          {"completed": True, "quality": 1.0})
+    assert k.ag.authority(cc) == start, "proxy successes must not promote"
+    k.record_outcome_verdict("t", cc, satisfied=True)
+    assert k.ag.authority(cc) > start, "human-grounded good must promote"
+
+
+def test_observe_outcome_never_raises(tmp_path):
+    k = _k(tmp_path)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("oi down")
+
+    k.oi.interpret = boom  # type: ignore[method-assign]
+    # must not propagate — the action already ran; a learning-update failure is swallowed
+    assert k.observe_outcome(to_action("write_file", {"path": "/x"}),
+                             {"completed": True}) is None
+
+
+def test_completed_unsatisfied_banks_bb_lesson(tmp_path):
+    k = _k(tmp_path)
+    before = len(k.bb.all_ids())
+    # completed but a preference/redo failure -> OI marks unsatisfied -> BB lesson
+    k.observe_outcome(to_action("write_file", {"path": "/x"}),
+                      {"completed": True, "redone": True, "quality": 0.4})
+    assert len(k.bb.all_ids()) > before
