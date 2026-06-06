@@ -17,7 +17,7 @@ Before a self-authored or installed skill goes live, Skill-CI enforces two gates
 
 Isolation model (stated precisely — we do not claim isolation we cannot deliver):
 
-  * The hard containment boundary is the **outer nanoclaw cage**: the agent already
+  * The hard containment boundary is the **outer Aurum cage**: the agent already
     runs in an ephemeral ``--rm`` container that holds no long-lived secrets (OneCLI
     injects per request) and has controlled egress. Skill-CI runs *inside* that.
   * Skill-CI layers defense-in-depth on top: it (a) refuses to execute a skill the

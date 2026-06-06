@@ -1,8 +1,8 @@
-# Aurum brain image — slim, single-shot Hermes for nanoclaw's ephemeral cage.
+# Aurum brain image — slim, single-shot Hermes for Aurum's ephemeral cage.
 #
 # Unlike the stock Hermes image (s6-overlay supervision + web dashboard + terminal
-# UI + Playwright + messaging gateways — all of which nanoclaw already provides),
-# this image runs `hermes -q` exactly once per message and speaks nanoclaw's
+# UI + Playwright + messaging gateways — all of which the cage already provides),
+# this image runs `hermes -q` exactly once per message and speaks the cage's
 # stdin ContainerInput / sentinel ContainerOutput contract via entrypoint.py.
 #
 # Build (context = aurum repo root):
@@ -43,7 +43,7 @@ RUN touch README.md
 # provides `unshare` for best-effort network isolation of those test runs.
 RUN pip install -e . pytest==9.0.2
 
-# nanoclaw runs the container as the host UID (--user uid:gid) with HOME=/home/node
+# The cage runs the container as the host UID (--user uid:gid) with HOME=/home/node
 # on Linux, or as image-default root on native Windows. Make a world-writable home
 # so dotfile writes succeed under either identity.
 RUN mkdir -p /home/node && chmod 0777 /home/node

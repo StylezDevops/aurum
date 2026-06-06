@@ -1,9 +1,9 @@
 # Aurum — Build Progress
 
-> **Aurum** = a forked **Hermes** agent brain running inside **nanoclaw's** ephemeral
-> Docker security cage. The agent can learn skills, diagnose its own failures, and author
-> tools — and every self-modifying path is gated, sandboxed, fail-closed, and tested.
-> Capability and governance grow on the same rails.
+> **Aurum** = a forked **Hermes** reasoning brain (Nous Research, MIT) running inside
+> **Aurum's own** ephemeral Docker security cage. The agent can learn skills, diagnose its
+> own failures, and author tools — and every self-modifying path is gated, sandboxed,
+> fail-closed, and tested. Capability and governance grow on the same rails.
 
 _Last updated: 2026-06-05_
 
@@ -67,7 +67,7 @@ dependency (the "headroom hung 19 min" failure mode is absent by construction).
 - **Phase 0** — Hermes runs headless `cli.py -q` via OpenRouter.
 - **Phase 1** — `aurum-agent:latest` slim image; stdin `ContainerInput` → `hermes -q` →
   sentinel `ContainerOutput`; persists to `/workspace/group/.hermes`.
-- **Phase 2** — nanoclaw `CONTAINER_IMAGE` reads `.env`.
+- **Phase 2** — cage `CONTAINER_IMAGE` reads `.env`.
 - **Phase 3 / 4** — 24KR release-pipeline + Gmail/2FA skills written; `PIPELINE_API_KEY`
   passthrough wired (verification gated on live creds).
 
@@ -80,9 +80,9 @@ These cannot be completed without operator credentials, by their nature:
 - [ ] **Phase 6 — social media + label skills** (post-v1): needs platform **OAuth** + live
       posting. Not built — shipping unverified social skills would violate the prod-grade bar.
 - [ ] **24KR pipeline live-test**: add pipeline to `mount-allowlist.json` (RW) +
-      `PIPELINE_API_KEY` in nanoclaw `.env` + run pipeline API on `:9111`.
+      `PIPELINE_API_KEY` in the cage `.env` + run pipeline API on `:9111`.
 - [ ] **Gmail OAuth** (Phase 4 live capture).
-- [ ] **Cut over**: set nanoclaw `CONTAINER_IMAGE=aurum-agent:latest` + restart nanoclaw.
+- [ ] **Cut over**: set the cage `CONTAINER_IMAGE=aurum-agent:latest` + restart the cage.
 - [ ] **Live multi-turn memory recall** check in the running cage.
 - [ ] _(Deferred infra)_ route agent LLM via the headroom `:8788` proxy (`AURUM_PROXY=1`) as
       a compression backstop.

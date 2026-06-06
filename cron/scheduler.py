@@ -979,7 +979,7 @@ def _parse_wake_gate(script_output: str) -> bool:
     """Parse the last non-empty stdout line of a cron job's pre-check script
     as a wake gate.
 
-    The convention (ported from nanoclaw #1232): if the last stdout line is
+    The convention: if the last stdout line is
     JSON like ``{"wakeAgent": false}``, the agent is skipped entirely — no
     LLM run, no delivery. Any other output (non-JSON, missing flag, gate
     absent, or ``wakeAgent: true``) means wake the agent normally.

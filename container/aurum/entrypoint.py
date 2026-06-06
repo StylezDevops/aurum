@@ -35,7 +35,7 @@ END = "---AURUM_OUTPUT_END---"
 HERMES_CLI = "/opt/hermes/cli.py"
 GROUP_DIR = "/workspace/group"
 # Persist Hermes session/state under the per-group RW mount so --resume works
-# across the ephemeral `docker run --rm` (matches nanoclaw's persistence rule).
+# across the ephemeral `docker run --rm` (the cage's persistence rule).
 HERMES_HOME = os.path.join(GROUP_DIR, ".hermes")
 # Canonical Aurum constitution shipped in the image (see Dockerfile COPY).
 SOUL_TEMPLATE = "/opt/aurum/SOUL.md"
@@ -128,7 +128,7 @@ def main() -> int:
     env["AURUM_TOOLSMITH"] = "1"
 
     cwd = GROUP_DIR if os.path.isdir(GROUP_DIR) else "/opt/hermes"
-    # No timeout here — nanoclaw owns the wall-clock timeout and kills the container.
+    # No timeout here — the cage owns the wall-clock timeout and kills the container.
     try:
         proc = subprocess.run(
             cmd, input="", capture_output=True, text=True, cwd=cwd, env=env
