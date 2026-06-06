@@ -67,18 +67,26 @@ class MemoryPoisoningDetector:
     # -- signatures ---------------------------------------------------------
     def _success_contradictions(self, events: List[Dict[str, Any]]
                                 ) -> Dict[str, List[str]]:
-        """suspect success event_id -> [contradicting later event_ids on a shared object]."""
+        """suspect success event_id -> [contradicting later event_ids on a shared object].
+
+        Indexed (object_id -> ordered postings) so the scan is ~linear in total postings
+        instead of O(n^2) over the whole ledger; each later contradiction is collected once
+        and the results stay in seq order."""
+        postings: Dict[str, List[int]] = {}
+        for i, ev in enumerate(events):
+            for oid in ev["object_ids"]:
+                postings.setdefault(oid, []).append(i)
         out: Dict[str, List[str]] = {}
         for i, ev in enumerate(events):
             if not self._is_success(ev):
                 continue
-            objs = set(ev["object_ids"])
-            contradictions = [
-                later["event_id"] for later in events[i + 1:]
-                if self._is_contradiction(later) and objs & set(later["object_ids"])
-            ]
-            if contradictions:
-                out[ev["event_id"]] = contradictions
+            later_idx = set()
+            for oid in ev["object_ids"]:
+                for j in postings.get(oid, ()):
+                    if j > i and self._is_contradiction(events[j]):
+                        later_idx.add(j)
+            if later_idx:
+                out[ev["event_id"]] = [events[j]["event_id"] for j in sorted(later_idx)]
         return out
 
     def _uniform_clusters(self, events: List[Dict[str, Any]]
@@ -128,9 +136,18 @@ class MemoryPoisoningDetector:
             raise RuntimeError(
                 "MPD is a derived view over EL; an EvidenceLedger is required")
         events = self._events()
+        cutoff_iso: Optional[str] = None
         if window_seconds is not None:
             cutoff = (now or datetime.now(timezone.utc)).timestamp() - window_seconds
-            events = [e for e in events if self._epoch(e["timestamp"]) >= cutoff]
+            # _epoch() returns None for an empty/unparsable timestamp — exclude those
+            # rather than comparing None to a float (would raise TypeError).
+            kept = []
+            for e in events:
+                ep = self._epoch(e["timestamp"])
+                if ep is not None and ep >= cutoff:
+                    kept.append(e)
+            events = kept
+            cutoff_iso = datetime.fromtimestamp(cutoff, tz=timezone.utc).isoformat()
 
         by_action: Dict[str, int] = {}
         by_source: Dict[str, int] = {}
@@ -138,15 +155,30 @@ class MemoryPoisoningDetector:
             by_action[e["action_type"]] = by_action.get(e["action_type"], 0) + 1
             by_source[e["source_organ"]] = by_source.get(e["source_organ"], 0) + 1
 
-        stamps = sorted(s for s in (self._epoch(e["timestamp"]) for e in events)
-                        if s is not None)
-        span = (stamps[-1] - stamps[0]) if len(stamps) >= 2 else 0.0
+        # Rate denominator: honour the REQUESTED window when one is given, else the
+        # observed min..max span — so a windowed call reports a window-consistent rate
+        # rather than one derived from whatever events happened to fall inside it.
+        if window_seconds is not None:
+            span = float(window_seconds)
+        else:
+            stamps = sorted(s for s in (self._epoch(e["timestamp"]) for e in events)
+                            if s is not None)
+            span = (stamps[-1] - stamps[0]) if len(stamps) >= 2 else 0.0
         per_hour = (len(events) / (span / 3600.0)) if span > 0 else 0.0
-        dec = self._el._db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
-        con = self._el._db.execute("SELECT COUNT(*) FROM conflicts").fetchone()[0]
+        # decisions/conflicts are windowed consistently with the ledger counts (their ts
+        # are ISO-8601 UTC, so a lexicographic >= against the cutoff is correct).
+        if cutoff_iso is not None:
+            dec = self._el._db.execute(
+                "SELECT COUNT(*) FROM decisions WHERE ts >= ?", (cutoff_iso,)).fetchone()[0]
+            con = self._el._db.execute(
+                "SELECT COUNT(*) FROM conflicts WHERE ts >= ?", (cutoff_iso,)).fetchone()[0]
+        else:
+            dec = self._el._db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+            con = self._el._db.execute("SELECT COUNT(*) FROM conflicts").fetchone()[0]
         return {"ledger_total": len(events), "by_action_type": by_action,
                 "by_source_organ": by_source, "decisions": dec, "conflicts": con,
-                "span_seconds": span, "events_per_hour": per_hour}
+                "span_seconds": span, "events_per_hour": per_hour,
+                "windowed": window_seconds is not None}
 
     @staticmethod
     def _epoch(ts: Optional[str]) -> Optional[float]:
