@@ -1,1 +1,7 @@
-pytest>=8.0
+# AURUM organ test + runtime dependencies.
+#
+# The authoritative, documented dependency list (required vs optional accelerators,
+# with version pins tested on Python 3.14 / Windows) lives at the repo root. This file
+# just includes it, so `pip install -r aurum/requirements.txt` and
+# `pip install -r install-requirements.txt` install the same set.
+-r ../install-requirements.txt

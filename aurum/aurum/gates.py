@@ -30,4 +30,13 @@ GATES: Dict[str, Tuple[List[str], str]] = {
     "AURUM_ERR_019": (["DD"], "DD never self-resolves: a flagged deadlock escalates only; an attempt to auto-retune DD's own (constitutional) parameters is rejected pre-gate."),
     "AURUM_ERR_020": (["CA", "DD"], "Escalation dedup: N recurrences of one deadlock signature produce ONE open gate item with a recurrence counter, not N items."),
     "AURUM_ERR_021": (["CAGE"], "Mount jail: a caged turn cannot mount or reach a host path outside the allowlist — deny-by-default; symlink, traversal, and string-prefix escapes are refused (fail closed)."),
+    # 022-030 — CS-EQ + institutional assertions (cseq/maa references; built post-Phase-A).
+    # 031..068 — Phase A EL hardening (runtime-integrity reference). EL is built; live now.
+    "AURUM_ERR_031": (["EL"], "Concurrent append integrity: N concurrent appends funnel through one writer and produce a contiguous, fork-free chain verify_chain() accepts."),
+    "AURUM_ERR_037": (["EL"], "Ledger backpressure fail-closed: appends into a saturated bounded queue raise LedgerBackpressure (action blocked) rather than dropping the log or blocking forever."),
+    "AURUM_ERR_044": (["EL"], "Clock injection: decay takes Domain Time as input; the harness validates fresh~1.0, one-half-life~0.5, one-year-FAST~0 by advancing an injected clock with no real waiting."),
+    "AURUM_ERR_046": (["EL"], "Forward-secure memory MAC: a tampered PAST entry fails verification and a stolen current ratchet key cannot reproduce an earlier key (no retroactive forgery); signing is local."),
+    "AURUM_ERR_053": (["EL"], "GIL-safe split hash: content hashing runs in a process pool while the serial writer does only the O(1) chain-link + append; verify_chain accepts the result under concurrency."),
+    "AURUM_ERR_054": (["EL"], "Domain vs Execution time: decay/familiarity use injectable Domain Time; timeouts/queue blocking use the real monotonic clock; a fast-forwarded Domain Time test does not alter Execution Time."),
+    "AURUM_ERR_068": (["EL"], "Linear-time redaction: PK.redact / fast-path scanning use an O(N)-guaranteed engine (RE2 or a backtracking-free scanner); native re is forbidden; a crafted backtracking string cannot lock the CPU."),
 }
