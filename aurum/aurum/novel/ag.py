@@ -198,6 +198,17 @@ class AuthorityGovernor:
     def kinetics(self) -> Kinetics:
         return dict(self._k)  # type: ignore[return-value]
 
+    def distribution(self) -> Dict[str, Any]:
+        """Authority distribution telemetry: per-class {authority, band} plus a band histogram,
+        over every class AG currently tracks. Read-only; for the governance dashboard."""
+        per_class = {cc: {"authority": self.authority(cc), "band": self.band(cc)}
+                     for cc in sorted(self._authority)}
+        histogram: Dict[str, int] = {name: 0 for name, _p, _d in _BANDS}
+        for info in per_class.values():
+            histogram[info["band"]] = histogram.get(info["band"], 0) + 1
+        return {"classes": per_class, "band_histogram": histogram,
+                "tracked_classes": len(per_class)}
+
     # -- update tick --------------------------------------------------------
     def observe(self, capability_class: str, signals: Dict[str, Any],
                 now: Optional[float] = None, environment: Optional[str] = None) -> float:

@@ -64,7 +64,23 @@ _TOOL_TABLE: Dict[str, Tuple[str, str, str]] = {
     "send_message": ("network", "commit_outward", CONSEQUENTIAL),
     "http_post": ("network", "commit_outward", CONSEQUENTIAL),
     "git_push": ("network", "commit_outward", CONSEQUENTIAL),
+    # Dataverse / D365 workflow surface. Reads are safe; an update is a REVERSIBLE mutation
+    # (code band); a DELETE is IRREVERSIBLE → commit_outward (FULL band) so it is gated until
+    # the agent holds top authority — the "correctly-gated irreversible step" the build brief
+    # requires of a real governed workflow.
+    "dataverse_query": ("read", "advise", SAFE_READ),
+    "dataverse_get": ("read", "advise", SAFE_READ),
+    "dataverse_create": ("dataverse", "code_edit", CONSEQUENTIAL),
+    "dataverse_update": ("dataverse", "code_edit", CONSEQUENTIAL),
+    "dataverse_delete": ("dataverse", "commit_outward", CONSEQUENTIAL),
 }
+
+# Tools whose effect is IRREVERSIBLE — flagged on the action so the gate (and FC inverted
+# scrutiny / telemetry) can treat them as the highest-consequence class. The flag is metadata;
+# the gating itself is the FULL-band requirement carried by their commit_outward action_class.
+_IRREVERSIBLE_TOOLS = frozenset({
+    "dataverse_delete", "delete_record", "deactivate_record", "git_push",
+})
 
 # Tools whose action_type is a PK taint SOURCE (sensitive read) or SINK (egress).
 # Setting action_type to the taint token lets PK.check_chain detect a
@@ -75,7 +91,7 @@ _TAINT_SINK_TOOLS = frozenset({"send_email", "send_message", "http_post", "git_p
 # capability_class -> privilege weight (feeds PK aggregate-cap rules).
 _PRIVILEGE: Dict[str, float] = {
     "read": 0.0, "ingest": 0.1, "file_write": 0.2,
-    "exec": 0.3, "tool_lifecycle": 0.3, "network": 0.4,
+    "exec": 0.3, "tool_lifecycle": 0.3, "network": 0.4, "dataverse": 0.3,
 }
 
 # Default per-class AG baseline authority an operator install grants. Raising these
@@ -89,6 +105,8 @@ DEFAULT_AG_BASELINE: Dict[str, float] = {
     "exec": 0.85,          # code band
     "tool_lifecycle": 0.85,  # code band (promotion itself is HUMAN_GATE via rules)
     "network": 0.65,       # readonly band — does NOT clear `commit_outward` (full) → gated
+    "dataverse": 0.85,     # code band — clears `code_edit` (read/update) but NOT the
+    #                        irreversible delete's `commit_outward` (full) → delete gated
 }
 
 
@@ -139,4 +157,6 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
     }
     if domain:
         action["domain"] = domain
+    if tool_name in _IRREVERSIBLE_TOOLS:
+        action["irreversible"] = True   # highest-consequence: gated to the FULL band
     return action
