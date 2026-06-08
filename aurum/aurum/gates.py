@@ -37,6 +37,10 @@ GATES: Dict[str, Tuple[List[str], str]] = {
     "AURUM_ERR_025": (["CSEQ"], "Probe inertness: invoking a probe is a runtime no-op (PK edge severed — no fs/network/tenant effect), records attempt_succeeded=False; probe cadence is constitutional (agent retune raises PermissionError)."),
     "AURUM_ERR_026": (["CSEQ"], "Manifest asymmetry / forgery resistance: verify_on_boot raises ConstitutionalBreach on a mutated surface OR a non-platform signature; the cage holds only the public key (no sign path); propose != enact."),
     # 027-030 — remaining CS-EQ/institutional assertions (built in later Phase-E checkpoints).
+    # 070-072 — FC forced contestability (institutional-directions §3). Next free numbers after 069.
+    "AURUM_ERR_070": (["FC"], "Inverted scrutiny: for an IRREVERSIBLE-class action, sampling rate + logging depth RISE monotonically with acting authority; for a reversible action they do not (authority buys speed)."),
+    "AURUM_ERR_071": (["FC"], "Re-justification: a long-trusted high-authority pathway is scheduled for heightened verification; a FAILED re-justification triggers the existing graduated demotion; PASSING preserves authority; FC never raises authority."),
+    "AURUM_ERR_072": (["FC"], "Early-life no-op + constitutional params: with no pathway above threshold FC schedules nothing (insufficient evidence); a param retune without the human gate raises PermissionError."),
     # Phase C — AG familiarity factor with atrophy (MAA/familiarity reference PART C; runtime PART 2).
     "AURUM_ERR_029": (["AG", "KVE"], "Atrophy decay: setting a domain's KVE validity to zero contracts its effective_n toward zero, collapsing the familiarity factor to its floor and tightening that domain's gate despite many historical successes."),
     "AURUM_ERR_032": (["AG", "KVE"], "Atrophy recovery without proxy backdoor: a floored domain's familiarity rebuilds on gated human-grounded-good outcomes and does NOT move on proxy-only success; repeated grounded outcomes raise it back above the autonomy threshold."),

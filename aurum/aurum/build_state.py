@@ -34,6 +34,10 @@ BUILT: dict[str, bool] = {
     # equilibrium taxonomy + integrity probes + signed external manifest). Arms 022–026.
     # Leg 2 (the sustained equilibrium PROPERTY) is INSTRUMENTED but deferred to evidence.
     "CSEQ": True,
+    # FC forced-contestability mechanism: inverted scrutiny for the irreversible class +
+    # periodic re-justification of elite pathways (observe on; evaluate evidence-gated;
+    # demote-only, never widens authority). Arms 070–072.
+    "FC": True,
     # Deployment substrate (not an organ) — the cage's host-mount containment
     # boundary. True once the mount jail exists; arms AURUM_ERR_021.
     "CAGE": True,
