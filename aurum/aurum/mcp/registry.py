@@ -53,6 +53,10 @@ _FORBIDDEN_SECRET_FIELDS = frozenset({
 _ALLOWED_FIELDS = frozenset({
     "id", "transport", "url", "secret_ref", "auth_header", "enabled_groups", "origin",
     "state", "created_at", "updated_at", "description", "capability", "tool_schema",
+    # `tools`: per-tool governance classification {tool: {capability_class, action_class,
+    # risk_tier, irreversible}} — a registered/AA-synthesized tool's gating lives HERE on the
+    # mount, never baked into action_map.py.
+    "tools",
 })
 
 
@@ -184,6 +188,15 @@ class McpRegistry:
         if state is not None:
             entries = [e for e in entries if e.get("state") == state]
         return sorted(entries, key=lambda e: e.get("id", ""))
+
+    def classify(self, server_id: str, tool: str) -> Optional[Dict[str, Any]]:
+        """The governance classification a registered server declared for one of its tools, or
+        None. This is what feeds `to_action(classification=...)` so a dynamic tool is governed
+        from the mount registry, not a baked table."""
+        entry = self.get(server_id)
+        if entry is None:
+            return None
+        return (entry.get("tools") or {}).get(tool)
 
     def tools_for_group(self, group: str) -> List[Dict[str, Any]]:
         """CONDITIONAL INJECTION: the ENABLED servers whose tools should be injected for `group`
