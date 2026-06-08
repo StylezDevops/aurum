@@ -30,6 +30,10 @@ BUILT: dict[str, bool] = {
     # Arbitration layer (MECHANISMS, not organs) — CA synchronous, DD asynchronous.
     # Arms AURUM_ERR_013–020.
     "CA": True, "DD": True,
+    # CS-EQ constitutional-stability mechanism (legs 1 & 3: economic differential +
+    # equilibrium taxonomy + integrity probes + signed external manifest). Arms 022–026.
+    # Leg 2 (the sustained equilibrium PROPERTY) is INSTRUMENTED but deferred to evidence.
+    "CSEQ": True,
     # Deployment substrate (not an organ) — the cage's host-mount containment
     # boundary. True once the mount jail exists; arms AURUM_ERR_021.
     "CAGE": True,

@@ -30,7 +30,13 @@ GATES: Dict[str, Tuple[List[str], str]] = {
     "AURUM_ERR_019": (["DD"], "DD never self-resolves: a flagged deadlock escalates only; an attempt to auto-retune DD's own (constitutional) parameters is rejected pre-gate."),
     "AURUM_ERR_020": (["CA", "DD"], "Escalation dedup: N recurrences of one deadlock signature produce ONE open gate item with a recurrence counter, not N items."),
     "AURUM_ERR_021": (["CAGE"], "Mount jail: a caged turn cannot mount or reach a host path outside the allowlist — deny-by-default; symlink, traversal, and string-prefix escapes are refused (fail closed)."),
-    # 022-030 — CS-EQ + institutional assertions (cseq/maa references; built post-Phase-A).
+    # 022-026 — CS-EQ legs 1 & 3 (cseq reference §6). CSEQ is built; live now.
+    "AURUM_ERR_022": (["CSEQ"], "Negative differential: an exploitable-bypass PathCost (p_u>0, C_u<C_g) yields D<=0 and equilibrium_holds() is False — the economic signature of a bypass, before any behavioural capture."),
+    "AURUM_ERR_023": (["CSEQ"], "Fail-closed infinite penalty: a fail-closed ungoverned route (p_u=0) yields D=+inf and equilibrium_holds() True; an unprobed unavailable route classifies PREVENTION_DEPENDENT (fail-safe pessimism), never DEFENSE_IN_DEPTH."),
+    "AURUM_ERR_024": (["CSEQ"], "Probe presentation isolation: an integrity probe exists only as a system-state action-graph object; nothing model-facing distinguishes a probe tool from a real one (no token/designation in context)."),
+    "AURUM_ERR_025": (["CSEQ"], "Probe inertness: invoking a probe is a runtime no-op (PK edge severed — no fs/network/tenant effect), records attempt_succeeded=False; probe cadence is constitutional (agent retune raises PermissionError)."),
+    "AURUM_ERR_026": (["CSEQ"], "Manifest asymmetry / forgery resistance: verify_on_boot raises ConstitutionalBreach on a mutated surface OR a non-platform signature; the cage holds only the public key (no sign path); propose != enact."),
+    # 027-030 — remaining CS-EQ/institutional assertions (built in later Phase-E checkpoints).
     # Phase C — AG familiarity factor with atrophy (MAA/familiarity reference PART C; runtime PART 2).
     "AURUM_ERR_029": (["AG", "KVE"], "Atrophy decay: setting a domain's KVE validity to zero contracts its effective_n toward zero, collapsing the familiarity factor to its floor and tightening that domain's gate despite many historical successes."),
     "AURUM_ERR_032": (["AG", "KVE"], "Atrophy recovery without proxy backdoor: a floored domain's familiarity rebuilds on gated human-grounded-good outcomes and does NOT move on proxy-only success; repeated grounded outcomes raise it back above the autonomy threshold."),

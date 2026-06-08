@@ -50,6 +50,9 @@ ELActionType = Literal[
     "PROMOTE", "PROPOSE", "BUILD_CAGED", "TEST", "QUARANTINE", "UNQUARANTINE", "DEPRECATE",
     # Arbitration
     "GOVERNANCE_DECISION",
+    # CS-EQ — constitutional stability (legs 1 & 3) + integrity probes
+    "CONSTITUTION_VERIFY", "CONSTITUTION_PROPOSAL", "CONSTITUTION_INCIDENT",
+    "EQUILIBRIUM_OBS", "INTEGRITY_PROBE",
 ]
 
 
