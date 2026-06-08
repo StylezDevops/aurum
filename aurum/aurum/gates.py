@@ -31,6 +31,10 @@ GATES: Dict[str, Tuple[List[str], str]] = {
     "AURUM_ERR_020": (["CA", "DD"], "Escalation dedup: N recurrences of one deadlock signature produce ONE open gate item with a recurrence counter, not N items."),
     "AURUM_ERR_021": (["CAGE"], "Mount jail: a caged turn cannot mount or reach a host path outside the allowlist — deny-by-default; symlink, traversal, and string-prefix escapes are refused (fail closed)."),
     # 022-030 — CS-EQ + institutional assertions (cseq/maa references; built post-Phase-A).
+    # Phase C — AG familiarity factor with atrophy (MAA/familiarity reference PART C; runtime PART 2).
+    "AURUM_ERR_029": (["AG", "KVE"], "Atrophy decay: setting a domain's KVE validity to zero contracts its effective_n toward zero, collapsing the familiarity factor to its floor and tightening that domain's gate despite many historical successes."),
+    "AURUM_ERR_032": (["AG", "KVE"], "Atrophy recovery without proxy backdoor: a floored domain's familiarity rebuilds on gated human-grounded-good outcomes and does NOT move on proxy-only success; repeated grounded outcomes raise it back above the autonomy threshold."),
+    "AURUM_ERR_038": (["AG", "KVE"], "Experience time-decay: effective_n discounts each grounded outcome by KVE validity AND age (e^(-lam.age), lam per volatility class); year-old FAST outcomes decay toward the floor while recent practice is preserved."),
     # 031..068 — Phase A EL hardening (runtime-integrity reference). EL is built; live now.
     "AURUM_ERR_031": (["EL"], "Concurrent append integrity: N concurrent appends funnel through one writer and produce a contiguous, fork-free chain verify_chain() accepts."),
     "AURUM_ERR_037": (["EL"], "Ledger backpressure fail-closed: appends into a saturated bounded queue raise LedgerBackpressure (action blocked) rather than dropping the log or blocking forever."),
