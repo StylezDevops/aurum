@@ -107,10 +107,18 @@ def _taint_action_type(tool_name: str, default: str) -> str:
 
 
 def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
-              justification_sources: Optional[List[str]] = None) -> Dict[str, Any]:
+              justification_sources: Optional[List[str]] = None,
+              domain: Optional[str] = None) -> Dict[str, Any]:
     """Build a PK/AG `action` dict from a live tool call.
 
     Unknown tools fail safe: treated as CONSEQUENTIAL with the `exec` class.
+
+    `domain` (optional) is the SUBJECT area the action operates in (e.g. 'd365', 'azure',
+    'k8s') — orthogonal to capability_class (read/write/exec/network). When present, the
+    governance gate applies the AG familiarity factor for that domain (effective authority =
+    base × familiarity), so an unfamiliar/stale domain tightens the ceiling. v1 honest limit:
+    domain is caller-supplied; automatic per-tool domain attribution is deferred calibration —
+    a domain-less action is gated on base authority (no familiarity penalty) as before.
     """
     args = args if isinstance(args, dict) else {}
     entry = _TOOL_TABLE.get(tool_name)
@@ -119,7 +127,7 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
     else:
         capability_class, action_class = "exec", "code_edit"  # fail safe
     resource = args.get("path") or args.get("url") or args.get("file_path") or ""
-    return {
+    action = {
         "action_id": uuid.uuid4().hex,
         "action_type": _taint_action_type(tool_name, capability_class),
         "tool_name": tool_name,
@@ -129,3 +137,6 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
         "resource": resource,
         "justification_sources": list(justification_sources or ["operator"]),
     }
+    if domain:
+        action["domain"] = domain
+    return action

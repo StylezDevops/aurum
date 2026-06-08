@@ -107,6 +107,13 @@ class KnowledgeValidityEngine:
         halflife = _HALFLIFE[r["volatility_class"]]
         return r["base_confidence"] * (0.5 ** (age / halflife))
 
+    def volatility(self, artifact_id: str) -> Optional[VolatilityClass]:
+        """The stored volatility class for a registered artifact, or None if unknown.
+        Read-only accessor used by AG's familiarity time-decay (it picks the per-volatility
+        λ). Unknown → None, so the caller applies its own fail-safe (fastest decay)."""
+        r = self._get(artifact_id)
+        return r["volatility_class"] if r is not None else None  # type: ignore[return-value]
+
     def provenance(self, artifact_id: str) -> Provenance:
         r = self._get(artifact_id)
         if r is None:
