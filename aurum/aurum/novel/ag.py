@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
 from ..types import AuthorityBand
+from .familiarity import FamiliarityLedger
 
 
 class Kinetics(TypedDict):
@@ -46,11 +47,24 @@ def _clamp01(x: float) -> float:
     return 0.0 if x < 0.0 else 1.0 if x > 1.0 else float(x)
 
 
+def _effective_band(value: float) -> str:
+    """STATELESS band partition for a derived/transient authority value (the effective
+    authority after the familiarity multiplier). [0.90,1]→full, [0.70,0.90)→code,
+    [0.50,0.70)→readonly, [0,0.50)→advisory. Deliberately NO hysteresis/dwell: those exist to
+    stop a STORED value flapping (AURUM_ERR_010); the effective ceiling is recomputed fresh per
+    gate check from its inputs, so it is deterministic and a clean partition is correct here."""
+    for name, _promote, demote in _BANDS:
+        if value >= demote:
+            return name
+    return _BANDS[-1][0]  # advisory (demote 0.0) — unreachable since value ≥ 0
+
+
 class AuthorityGovernor:
     ORGAN = "AG"
 
     def __init__(self, el: Any = None, max_tl_tier: int = 3,
-                 kinetics: Optional[Kinetics] = None, dwell_seconds: float = 60.0) -> None:
+                 kinetics: Optional[Kinetics] = None, dwell_seconds: float = 60.0,
+                 familiarity: Optional[FamiliarityLedger] = None) -> None:
         self._el = el
         self.max_tl_tier = max_tl_tier
         self.dwell_seconds = dwell_seconds
@@ -60,6 +74,11 @@ class AuthorityGovernor:
         self._band_idx: Dict[str, int] = {}     # index into _BANDS (0=full)
         self._last_promote: Dict[str, float] = {}
         self._signals: Dict[str, Dict[str, Any]] = {}
+        # Familiarity factor (domain-keyed): effective authority = base × familiarity, applied
+        # at the point of USE (the gate/ceiling check), NEVER inside the frozen scoring — so
+        # AURUM_ERR_010 (no flapping of the stored band) and the frozen-scoring guarantees stay
+        # intact. The ledger is a projection of the EL grounded-outcome stream (rehydrated on boot).
+        self._familiarity = familiarity if familiarity is not None else FamiliarityLedger()
         # Environment provenance (structural, 2026-06-06): which evidence domains
         # contributed authority for a class. RECORDED + EXPOSED, NOT YET ACTED ON —
         # environment is metadata on the authority record, never an input to the
@@ -76,13 +95,60 @@ class AuthorityGovernor:
         idx = self._band_idx.get(capability_class, len(_BANDS) - 1)
         return _BANDS[idx][0]  # type: ignore[return-value]
 
-    def permits(self, action: Any) -> bool:
-        """True iff the current band for the action's class clears the band the action
-        requires. AG computes the ceiling; PK is what actually enforces it."""
+    def permits(self, action: Any, *, now: Optional[float] = None,
+                validity: Optional[float] = None, volatility: Optional[str] = None) -> bool:
+        """True iff the band for the action's class clears the band the action requires. AG
+        computes the ceiling; PK/kernel enforces it.
+
+        Familiarity is OPT-IN per action: when the caller supplies `validity` (the domain's
+        current KVE validity) the EFFECTIVE band (base × familiarity, domain from
+        `action['domain']`) is enforced — stricter, since familiarity ≤ 1. With no familiarity
+        inputs (validity None), the BASE band is used (back-compatible: existing callers and the
+        non-domain-scoped path are unchanged)."""
         cc = action.get("capability_class", "default")
         required = action.get("required_band") \
             or _ACTION_BAND.get(action.get("action_class", "advise"), "advisory")
-        return _RANK[self.band(cc)] >= _RANK[required]
+        if validity is None:
+            return _RANK[self.band(cc)] >= _RANK[required]
+        eff = self.effective_band(cc, action.get("domain", "unknown"),
+                                  now=now if now is not None else 0.0,
+                                  validity=validity, volatility=volatility)
+        return _RANK[eff] >= _RANK[required]
+
+    # -- familiarity factor (domain-keyed; applied at point of use, never in scoring) -------
+    def record_familiarity(self, domain: str, observed_at: float) -> None:
+        """Record one human-grounded-good outcome in a domain. MUST be called only from the
+        grounded path (proxy success never builds familiarity — the forbidden-loop guard)."""
+        self._familiarity.record(domain, observed_at)
+
+    def replay_familiarity(self, records: Any) -> None:
+        """Rebuild the familiarity projection from durable (domain, observed_at) records on
+        boot. Public so the kernel rehydrates without reaching into AG internals."""
+        self._familiarity.replay(records)
+
+    def familiarity_factor(self, domain: str, *, now: float, validity: float,
+                           volatility: Optional[str]) -> float:
+        return self._familiarity.factor(domain, now=now, validity=validity,
+                                        volatility=volatility)
+
+    def effective_authority(self, capability_class: str, domain: str, *, now: float,
+                            validity: float, volatility: Optional[str]) -> float:
+        """base_authority(class) × familiarity_factor(domain). base comes from the FROZEN
+        scoring untouched; familiarity is a separate multiplier applied here, at use."""
+        return self.authority(capability_class) * self._familiarity.factor(
+            domain, now=now, validity=validity, volatility=volatility)
+
+    def effective_band(self, capability_class: str, domain: str, *, now: float,
+                       validity: float, volatility: Optional[str]) -> AuthorityBand:
+        eff = self.effective_authority(capability_class, domain, now=now,
+                                       validity=validity, volatility=volatility)
+        return _effective_band(eff)  # type: ignore[return-value]
+
+    def familiarity_effective_n(self, domain: str, *, now: float, validity: float,
+                                volatility: Optional[str]) -> float:
+        """The decay/validity-weighted experience count for a domain — for explain/tests."""
+        return self._familiarity.effective_n(domain, now=now, validity=validity,
+                                             volatility=volatility)
 
     def explain(self, capability_class: str) -> Dict[str, Any]:
         """Explain the current authority for a class. Beyond the live signals/contributions,

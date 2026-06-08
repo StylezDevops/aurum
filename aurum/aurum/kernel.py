@@ -31,7 +31,9 @@ from typing import Any, Dict, List, Optional
 
 from .action_map import DEFAULT_AG_BASELINE, SAFE_READ, risk_tier
 from .arbitration.ca import ConflictArbiter
+from .durability.clock import RealDomainClock
 from .durability.el import EvidenceLedger
+from .durability.kve import KnowledgeValidityEngine
 from .novel.ag import AuthorityGovernor
 from .novel.oi import OutcomeInterpreter
 from .spine.bb import BlackBox
@@ -89,7 +91,8 @@ class GovernanceKernel:
     ORGAN = "GOV"
 
     def __init__(self, home: str, rules: Optional[List[Dict[str, Any]]] = None,
-                 ag_baseline: Optional[Dict[str, float]] = None) -> None:
+                 ag_baseline: Optional[Dict[str, float]] = None,
+                 domain_clock: Any = None) -> None:
         base = Path(home) / "governance"
         base.mkdir(parents=True, exist_ok=True)
         # PK first (el=None) — the kernel owns EL logging, which avoids the PK<->EL
@@ -99,6 +102,12 @@ class GovernanceKernel:
         self.ag = AuthorityGovernor(el=self.el)
         self.ca = ConflictArbiter(str(base / "ca.db"), el=self.el)
         self.bb = BlackBox(str(base / "bb.db"), pk=self.pk, el=self.el)
+        # KVE supplies the DOMAIN validity + volatility that weight the familiarity factor
+        # (Phase C). Own durable DB on the mount (survives --rm). el for invalidation audit.
+        self.kve = KnowledgeValidityEngine(str(base / "kve.db"), el=self.el)
+        # DOMAIN-TIME clock (injectable for tests; real wall-clock in prod). Drives familiarity
+        # decay + KVE validity `now`; NEVER execution-time (timeouts use the monotonic clock).
+        self._domain_clock = domain_clock if domain_clock is not None else RealDomainClock()
         # OI judges outcomes AFTER an action runs (the OI→BB→AG loop). bb_record wires
         # OI→BB: OI auto-banks "completed-but-unsatisfied" lessons. el for the audit trail.
         self.oi = OutcomeInterpreter(str(base / "oi.db"), el=self.el, bb_record=self.bb.write)
@@ -132,6 +141,47 @@ class GovernanceKernel:
         for cc, (auth, earned) in history.items():
             if cc not in baseline:
                 self.ag.restore_authority(cc, auth, earned_in=earned)
+        self._rehydrate_familiarity()
+
+    def _rehydrate_familiarity(self) -> None:
+        """Rebuild the familiarity projection from the durable EL grounded-outcome stream —
+        verify_chain-gated (a tampered ledger drives NO familiarity → floor, fail-safe), same
+        discipline as authority rehydration. Replays only HUMAN-GROUNDED-GOOD, domain-scoped
+        outcome_verdict events (proxy never built familiarity, so there is nothing to replay)."""
+        try:
+            if not self.el.verify_chain():
+                return
+        except Exception:
+            return
+        records: List[tuple] = []
+        try:
+            for ev in self.el.query({"source_organ": "GOV",
+                                     "action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}):
+                p = ev.get("payload") or {}
+                if (p.get("outcome") == "outcome_verdict" and p.get("satisfied") is True
+                        and p.get("satisfaction_source") == "human"
+                        and p.get("domain") and p.get("observed_at") is not None):
+                    records.append((p["domain"], float(p["observed_at"])))
+        except Exception:
+            return
+        if records:
+            self.ag.replay_familiarity(records)
+
+    def _familiarity_inputs(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """Familiarity gating inputs for an action, or {} when it is not domain-scoped. A
+        domain-scoped action's effective authority = base × familiarity(domain), weighted by the
+        domain's current KVE validity and discounted by per-volatility experience decay.
+        FAIL-SAFE: a domain with no KVE knowledge artifact → validity 0.0 (unknown ≡ stale →
+        floor) and unknown volatility → fastest decay — the most conservative familiarity."""
+        domain = action.get("domain")
+        if not domain:
+            return {}
+        now = self._domain_clock.now()
+        try:
+            validity = self.kve.confidence(domain, now=now)
+        except Exception:
+            validity = 0.0  # unknown knowledge validity = decayed (never fresh)
+        return {"now": now, "validity": validity, "volatility": self.kve.volatility(domain)}
 
     def _authority_history(self) -> Dict[str, Any]:
         """Last authority per capability_class from the DURABLE EL — ONLY if the chain
@@ -279,18 +329,26 @@ class GovernanceKernel:
                                       rule_id=pk_result["rule_id"], gate=gate)
 
         # 5. AG ceiling — AG computes it, PK/kernel enforces. AG fault ⇒ peripheral.
+        #    Familiarity (Phase C): a DOMAIN-scoped action is gated on its EFFECTIVE band
+        #    (base × familiarity) — stricter than base, so an unfamiliar/stale domain tightens
+        #    the gate even when base authority is high. Non-domain actions use the base band.
+        fam = self._familiarity_inputs(action)
         try:
-            permitted = self.ag.permits(action)
+            permitted = self.ag.permits(action, **fam)
         except Exception as e:
             raise _PeripheralFault(f"AG.permits failed: {e}") from e
         if not permitted:
             cc = action.get("capability_class", "default")
+            band = (self.ag.effective_band(cc, action.get("domain", "unknown"), **fam)
+                    if fam else self.ag.band(cc))
             self._best_effort_log("deny", action,
-                                  {"rule_id": "ag:ceiling", "band": self.ag.band(cc)})
+                                  {"rule_id": "ag:ceiling", "band": band,
+                                   "familiarity_gated": bool(fam),
+                                   "domain": action.get("domain")})
             return GovernanceDecision(
                 allow=False, rule_id="ag:ceiling",
                 reason=f"ag-ceiling: '{cc}' requires higher authority "
-                       f"(band={self.ag.band(cc)}); raise authority to permit")
+                       f"(band={band}); raise authority to permit")
 
         # 6. CA arbitration. CA fault ⇒ peripheral.
         try:
@@ -421,28 +479,42 @@ class GovernanceKernel:
             return None
 
     def record_outcome_verdict(self, task_id: str, capability_class: str,
-                               satisfied: bool, *, environment: Optional[str] = None) -> None:
+                               satisfied: bool, *, environment: Optional[str] = None,
+                               domain: Optional[str] = None) -> None:
         """Ground-truth (out-of-loop / human) outcome path. This is the ONLY path that may
         PROMOTE authority. A grounded GOOD verdict slow-promotes the class; a grounded BAD
-        verdict demotes it (reinforcing the reflex). Best-effort; never raises."""
+        verdict demotes it (reinforcing the reflex). Best-effort; never raises.
+
+        FAMILIARITY (Phase C): a grounded-GOOD verdict in a declared `domain` also builds that
+        domain's familiarity — the ONLY path that does (proxy never reaches here; a BAD verdict
+        never builds). This is also the recovery path (AURUM_ERR_032): at the floor, a gated
+        human-grounded-good outcome still adds full-weight experience, so a domain is never
+        permanently bricked. The (domain, observed_at) is logged so the projection rehydrates."""
         try:
             self.oi.record_human_verdict(task_id, {"satisfied": bool(satisfied)})
             decision_id = uuid.uuid4().hex
+            observed_at = self._domain_clock.now()   # DOMAIN time (injectable; real in prod)
             cause = {
                 "decision_id": decision_id,
                 "trigger": "outcome_verdict",
                 "classified": "good" if satisfied else "bad",
                 "satisfaction_source": "human",     # the ground-truth, out-of-loop signal
-                "task_id": task_id, "capability_class": capability_class,
+                "task_id": task_id, "capability_class": capability_class, "domain": domain,
             }
             self.ag.apply_outcome(capability_class, good=bool(satisfied), grounded=True,
                                   environment=environment, cause=cause)
+            # Durable FIRST (the EL grounded-outcome event is the source of truth that
+            # rehydration replays), THEN the in-memory familiarity projection.
             self._best_effort_log(
                 "outcome_verdict",
                 {"action_id": task_id, "capability_class": capability_class},
                 {"decision_id": decision_id, "satisfied": bool(satisfied),
                  "satisfaction_source": "human",
-                 "authority": self.ag.authority(capability_class)})
+                 "authority": self.ag.authority(capability_class),
+                 "domain": domain, "observed_at": observed_at,
+                 "volatility": self.kve.volatility(domain) if domain else None})
+            if satisfied and domain:
+                self.ag.record_familiarity(domain, observed_at)
         except Exception:
             pass
 
