@@ -53,6 +53,8 @@ ELActionType = Literal[
     # CS-EQ — constitutional stability (legs 1 & 3) + integrity probes
     "CONSTITUTION_VERIFY", "CONSTITUTION_PROPOSAL", "CONSTITUTION_INCIDENT",
     "EQUILIBRIUM_OBS", "INTEGRITY_PROBE",
+    # FC — forced contestability (re-justification of elite pathways)
+    "FC_REJUSTIFY_SCHEDULED", "FC_REJUSTIFY_PASSED", "FC_REJUSTIFY_FAILED",
 ]
 
 
