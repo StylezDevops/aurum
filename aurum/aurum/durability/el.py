@@ -15,14 +15,71 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Deque, Dict, List, Optional, TypedDict
 
 from ..types import ELEvent, calculate_block_hash
+from .clock import execution_now
 
 GENESIS_HASH = "0" * 64
+
+
+def _percentile(sorted_vals: List[float], pct: float) -> float:
+    """Nearest-rank percentile over a pre-sorted list (pct in [0,100]); 0.0 if empty."""
+    if not sorted_vals:
+        return 0.0
+    k = max(0, min(len(sorted_vals) - 1, int(round((pct / 100.0) * len(sorted_vals) + 0.5)) - 1))
+    return sorted_vals[k]
+
+
+class _AppendMetrics:
+    """Thread-safe append telemetry: latency percentiles + an in-flight DEPTH gauge.
+
+    EL append is the one operation whose latency degradation silently degrades half the
+    architecture (AG/EG live-scoring read inline), so it is the canary to watch. The in-flight
+    gauge is the synchronous analogue of the writer's queue depth — under concurrent appends it
+    rises above 1, surfacing exactly the GIL-vs-ledger contention the runtime reference warns of.
+    Bounded ring (no unbounded growth over a multi-year run). Execution (monotonic) time only —
+    never Domain Time."""
+
+    def __init__(self, cap: int = 1024) -> None:
+        self._lock = threading.Lock()
+        self._lat_ms: Deque[float] = deque(maxlen=cap)
+        self._count = 0
+        self._in_flight = 0
+        self._max_in_flight = 0
+
+    def begin(self) -> float:
+        with self._lock:
+            self._in_flight += 1
+            if self._in_flight > self._max_in_flight:
+                self._max_in_flight = self._in_flight
+        return execution_now()
+
+    def end(self, t0: float) -> None:
+        dt_ms = (execution_now() - t0) * 1000.0
+        with self._lock:
+            self._in_flight -= 1
+            self._lat_ms.append(dt_ms)
+            self._count += 1
+
+    def snapshot(self) -> Dict[str, Any]:
+        with self._lock:
+            vals = sorted(self._lat_ms)
+            return {
+                "append_count": self._count,
+                "in_flight": self._in_flight,
+                "max_in_flight": self._max_in_flight,
+                "p50_ms": round(_percentile(vals, 50), 4),
+                "p95_ms": round(_percentile(vals, 95), 4),
+                "p99_ms": round(_percentile(vals, 99), 4),
+                "max_ms": round(vals[-1], 4) if vals else 0.0,
+                "sample_window": len(vals),
+            }
 
 
 class ELHealth(TypedDict):
@@ -176,6 +233,7 @@ class EvidenceLedger:
         self._db.execute("PRAGMA synchronous=FULL;")    # fsync before ack
         self._db.execute("PRAGMA foreign_keys=ON;")
         self._db.executescript(_SCHEMA)
+        self._metrics = _AppendMetrics()   # append latency + in-flight depth telemetry
 
     def append(self, event: ELEvent) -> None:
         """Durable, hash-chained append. FAIL-SAFE: raises on any failure so the
@@ -214,7 +272,9 @@ class EvidenceLedger:
         self._insert(event)
 
     def _insert(self, ev: ELEvent) -> None:
-        """Shared physical INSERT for append (inline-hashed) and append_raw (writer-hashed)."""
+        """Shared physical INSERT for append (inline-hashed) and append_raw (writer-hashed).
+        Timed + depth-gauged for telemetry; the gauge always closes (finally) even on failure."""
+        t0 = self._metrics.begin()
         try:
             cur = self._db.execute(
                 "INSERT INTO evidence_ledger "
@@ -236,6 +296,13 @@ class EvidenceLedger:
                 )
         except sqlite3.Error as e:
             raise RuntimeError(f"EL.append failed; action must not proceed: {e}") from e
+        finally:
+            self._metrics.end(t0)
+
+    def append_metrics(self) -> Dict[str, Any]:
+        """Append latency percentiles + in-flight depth (the GIL-vs-ledger canary). Read-only;
+        the live decision path's first-order SLO surfaced for the telemetry view."""
+        return self._metrics.snapshot()
 
     def _tip_hash(self) -> str:
         row = self._db.execute(
