@@ -45,3 +45,11 @@ rustworkx>=0.16             # tested: 0.17.1 (cp39-abi3 wheel, works on 3.14)
 # recursive-CTE path for large-graph / analytic queries. NOT required; SQLite is the
 # canonical EL/CS substrate. Listed so the alternative is one `pip install` away.
 duckdb>=1.0                 # tested: 1.5.3
+
+# Gmail OAuth 2FA-capture path (Phase F — aurum.sensors.gmail_oauth.GmailApiReader +
+# scripts/gmail_consent.py). OPTIONAL: only the OAuth/Gmail-API reader needs these; the IMAP
+# reader (aurum.sensors.gmail_2fa.MailboxReader) needs none. Imported lazily, so their absence
+# never breaks `import aurum.sensors` or the test suite (tests inject a fake Gmail service).
+google-api-python-client>=2.0
+google-auth>=2.0
+google-auth-oauthlib>=1.0
