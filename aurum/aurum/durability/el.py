@@ -179,7 +179,12 @@ class EvidenceLedger:
 
     def append(self, event: ELEvent) -> None:
         """Durable, hash-chained append. FAIL-SAFE: raises on any failure so the
-        caller's action does not proceed (write-then-act)."""
+        caller's action does not proceed (write-then-act).
+
+        Direct (synchronous) path. Concurrent callers should go through
+        SerializedLedgerWriter (durability/el_writer.py), which funnels all appends through one
+        writer so the chain cannot fork (AURUM_ERR_031); this method computes the same
+        split-hash inline and is kept for single-threaded callers and existing tests."""
         ev = dict(event)
         ev["payload"] = self._redact(ev.get("payload", {}))
         if not ev.get("event_id"):
@@ -188,6 +193,28 @@ class EvidenceLedger:
             ev["timestamp"] = _utc_now_iso()
         ev["prev_hash"] = self._tip_hash()
         ev["hash"] = calculate_block_hash(ev)
+        self._insert(ev)
+
+    def redact(self, payload: Any) -> Any:
+        """Apply the single (PK-owned) redaction policy. Exposed so SerializedLedgerWriter
+        redacts through the SAME chokepoint on write rather than rolling its own."""
+        return self._redact(payload)
+
+    def tip_hash(self) -> str:
+        """Current chain tip hash (GENESIS if empty). Public so the single writer can read
+        the tip and assign prev_hash under no contention."""
+        return self._tip_hash()
+
+    def append_raw(self, event: ELEvent) -> None:
+        """Insert a fully-formed event — event_id, timestamp, prev_hash, hash all set, payload
+        already redacted. The single PHYSICAL writer used by SerializedLedgerWriter: the serial
+        chain-link is assigned by that one writer under no tip contention (AURUM_ERR_031), so
+        this method must not re-read the tip or recompute the hash. FAIL-SAFE: raises on any
+        DB error so the caller's action does not proceed."""
+        self._insert(event)
+
+    def _insert(self, ev: ELEvent) -> None:
+        """Shared physical INSERT for append (inline-hashed) and append_raw (writer-hashed)."""
         try:
             cur = self._db.execute(
                 "INSERT INTO evidence_ledger "

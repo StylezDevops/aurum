@@ -66,18 +66,44 @@ class ELEvent(TypedDict):
     hash: str
 
 
-def calculate_block_hash(event: ELEvent) -> str:
-    """Type-layer cryptographic integrity across the reasoning spine.
+def content_hash(event: ELEvent) -> str:
+    """The EXPENSIVE, chain-INDEPENDENT half of the block hash (AURUM_ERR_053).
 
-    Hashes every field except `hash` itself, in sorted-key order, so the chain
-    is deterministic and any retroactive edit is detectable via verify_chain().
+    Hashes every field except `hash` AND `prev_hash`, in sorted-key order. Because it
+    does not depend on the prior event, it can be computed OFF the single writer thread
+    (process pool) — the CPU-bound `json.dumps` + `sha256` that would otherwise saturate
+    one core under the GIL and back the ledger queue into LedgerBackpressure. See
+    durability/el_writer.py.
     """
     serialized = json.dumps(
-        {k: event[k] for k in sorted(event.keys()) if k != "hash"},
+        {k: event[k] for k in sorted(event.keys()) if k not in ("hash", "prev_hash")},
         sort_keys=True,
         default=str,
     )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def chain_link(content_h: str, prev_hash: str) -> str:
+    """The CHEAP, serial half (AURUM_ERR_053): O(1) over two fixed-size hex strings.
+
+    This is the only hashing the single writer does on its own thread — folding the
+    pre-computed content hash into the chain at the current tip. Its input size is
+    independent of the event payload, so it cannot become a per-event CPU bottleneck.
+    """
+    return hashlib.sha256(f"{prev_hash}:{content_h}".encode("utf-8")).hexdigest()
+
+
+def calculate_block_hash(event: ELEvent) -> str:
+    """Type-layer cryptographic integrity across the reasoning spine.
+
+    Split-hash composition: chain_link(content_hash(event), event.prev_hash). Folding
+    the chain-independent content hash with the prior hash keeps the chain deterministic
+    and any retroactive edit detectable via verify_chain() (a tampered content field
+    changes content_hash; a tampered prev_hash changes the link) — while letting the
+    expensive half run off the writer thread (AURUM_ERR_053). Equivalent for direct
+    callers (EL.append, verify_chain); the writer computes the two halves separately.
+    """
+    return chain_link(content_hash(event), event.get("prev_hash", ""))
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,47 @@
+# AURUM — install requirements
+#
+# Install:   python -m pip install -r install-requirements.txt
+# Tested on: Python 3.14.3, Windows 11 (system Python at C:\Python314).
+#            On Py3.14 these landed in the per-user site-packages
+#            (%APPDATA%\Python\Python314\site-packages) because system
+#            site-packages is not writable without admin — imports still resolve.
+#
+# All four below ship cp314 wheels (no C++/Rust toolchain needed). If a wheel is
+# ever missing on your platform, pip would try a source build (Rust for rustworkx,
+# the RE2 C++ lib for google-re2) — to fail fast instead of hanging on a doomed
+# build, add  --only-binary=:all:  to the pip command.
+#
+# Two tiers: REQUIRED (the code needs them) and OPTIONAL ACCELERATORS (the code
+# runs correctly without them via a pure-stdlib fallback; installing them activates
+# the faster / spec-preferred path).
+
+# ── REQUIRED ──────────────────────────────────────────────────────────────────
+
+# ed25519 signing/verification for the CS-EQ signed constitutional manifest
+# (Phase E) and asymmetric-crypto needs elsewhere. The forward-secure ratcheted
+# MAC (AURUM_ERR_046) uses only stdlib hashlib/hmac, so it needs nothing here.
+cryptography>=44,<47        # tested: 46.0.5
+
+# Test harness / merge gate (pytest -q is the CI status check).
+pytest>=8.0                 # tested: 9.0.2
+
+# ── OPTIONAL ACCELERATORS ───────────────────────────────────────────────────────
+# Each has a working fallback; absence degrades performance/engine, never correctness.
+
+# google-re2 — linear-time (RE2) engine for fast-path redaction / taint scanning
+# (AURUM_ERR_068). When present, aurum.durability.redaction reports engine="re2";
+# when ABSENT it falls back to a backtracking-free pure-Python linear scanner
+# (engine="linear-scan"). EITHER WAY the O(N) / ReDoS-immunity guarantee holds —
+# native `re` is never used on the fast path. Imports as `import re2`.
+google-re2>=1.1             # tested: 1.1.20251105
+
+# rustworkx — C/Rust graph backend, the documented ALTERNATIVE for CS blast-radius
+# if profiling ever shows the default insufficient. NOT required: CS already uses a
+# SQLite recursive CTE over an indexed edge table (the runtime-integrity reference's
+# preferred backing), which needs no extra dependency. Pulls in numpy.
+rustworkx>=0.16             # tested: 0.17.1 (cp39-abi3 wheel, works on 3.14)
+
+# duckdb — analytic SQL engine, the other documented ALTERNATIVE to the SQLite
+# recursive-CTE path for large-graph / analytic queries. NOT required; SQLite is the
+# canonical EL/CS substrate. Listed so the alternative is one `pip install` away.
+duckdb>=1.0                 # tested: 1.5.3
