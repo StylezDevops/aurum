@@ -85,11 +85,38 @@ class AuthorityGovernor:
         return _RANK[self.band(cc)] >= _RANK[required]
 
     def explain(self, capability_class: str) -> Dict[str, Any]:
+        """Explain the current authority for a class. Beyond the live signals/contributions,
+        `evidence` is the ordered ledger trail of every TRUST_CHANGE for this class (from→to,
+        band, and the cause that moved it) — so the current level traces back through every
+        prior level to the outcome/evidence that produced it. Cold-start (no ledger, or a
+        class with no history) yields `evidence: []` — a clean no-op, never a fabricated trail.
+        The durable source of truth is that append-only TRUST_CHANGE stream; the in-memory
+        authority is a projection of it, never a separately-stored mutable scalar."""
         sig = self._signals.get(capability_class, {})
         return {"authority": self.authority(capability_class),
                 "band": self.band(capability_class), "signals": sig,
                 "contributions": self._contributions(sig),
-                "earned_in": self.earned_in(capability_class)}
+                "earned_in": self.earned_in(capability_class),
+                "evidence": self._evidence_trail(capability_class)}
+
+    def _evidence_trail(self, capability_class: str) -> List[Dict[str, Any]]:
+        """Ordered (oldest→newest) TRUST_CHANGE trail for a class, read from AG's own ledger.
+        Each entry links an authority level to the cause that produced it. Returns [] when
+        there is no ledger or no history (cold-start clean no-op); never raises."""
+        if self._el is None:
+            return []
+        try:
+            rows = self._el.query({"source_organ": "AG", "action_type": "TRUST_CHANGE",
+                                   "capability_class": capability_class, "limit": 1_000_000})
+        except Exception:
+            return []
+        trail = [{"from": (p := ev.get("payload") or {}).get("prev_authority"),
+                  "to": p.get("authority"), "band": p.get("band"),
+                  "environment": p.get("environment"), "cause": p.get("cause"),
+                  "timestamp": ev.get("timestamp")}
+                 for ev in rows]
+        trail.reverse()  # query returns newest-first; present oldest→newest
+        return trail
 
     def earned_in(self, capability_class: str) -> List[str]:
         """Provenance: the environments that have contributed authority for this class.

@@ -464,3 +464,32 @@ class GovernanceKernel:
         except Exception:
             return None
         return None
+
+    def why_authority_chain(self, capability_class: str) -> List[Dict[str, Any]]:
+        """The FULL why-chain: every authority level for a class, oldest→newest, each joined to
+        the outcome event that caused it (via `cause.decision_id` → the GOVERNANCE_DECISION
+        outcome event in the same ledger). This is the criterion-5 prize made complete — any
+        authority level can be explained by replaying the events that produced it, with the
+        triggering outcome attached, not merely the latest move. Empty list on a cold/empty
+        ledger (clean no-op). Best-effort; never raises."""
+        try:
+            # Index outcome events (observe_outcome / record_outcome_verdict log a decision_id).
+            outcomes: Dict[str, Dict[str, Any]] = {}
+            for ev in self.el.query({"source_organ": "GOV",
+                                     "action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}):
+                did = (ev.get("payload") or {}).get("decision_id")
+                if did and did not in outcomes:
+                    outcomes[did] = ev
+            chain: List[Dict[str, Any]] = []
+            for ev in self.el.query({"source_organ": "AG", "action_type": "TRUST_CHANGE",
+                                     "capability_class": capability_class, "limit": 1_000_000}):
+                p = ev.get("payload") or {}
+                cause = p.get("cause") or {}
+                did = cause.get("decision_id")
+                chain.append({"from": p.get("prev_authority"), "to": p.get("authority"),
+                              "band": p.get("band"), "cause": cause,
+                              "outcome_event": outcomes.get(did) if did else None})
+            chain.reverse()  # oldest→newest
+            return chain
+        except Exception:
+            return []
