@@ -73,6 +73,11 @@ _TOOL_TABLE: Dict[str, Tuple[str, str, str]] = {
     "dataverse_create": ("dataverse", "code_edit", CONSEQUENTIAL),
     "dataverse_update": ("dataverse", "code_edit", CONSEQUENTIAL),
     "dataverse_delete": ("dataverse", "commit_outward", CONSEQUENTIAL),
+    # NOTE: the 24KR pipeline tools are NOT seeded here. As a dynamically-registered (remote)
+    # MCP, the pipeline DECLARES its tools' governance classification in the mount F1 registry
+    # (see PipelineClient._TOOL_CLASS) and passes it via `to_action(classification=...)` — so a
+    # registered/AA-synthesized tool never requires an edit to this baked file. Only the
+    # `pipeline` capability CLASS keeps a baseline below (class baselines are operator config).
 }
 
 # Tools whose effect is IRREVERSIBLE — flagged on the action so the gate (and FC inverted
@@ -80,7 +85,7 @@ _TOOL_TABLE: Dict[str, Tuple[str, str, str]] = {
 # the gating itself is the FULL-band requirement carried by their commit_outward action_class.
 _IRREVERSIBLE_TOOLS = frozenset({
     "dataverse_delete", "delete_record", "deactivate_record", "git_push",
-})
+})  # dynamic tools (e.g. pipeline_submit) carry `irreversible` in their registry classification
 
 # Tools whose action_type is a PK taint SOURCE (sensitive read) or SINK (egress).
 # Setting action_type to the taint token lets PK.check_chain detect a
@@ -91,7 +96,7 @@ _TAINT_SINK_TOOLS = frozenset({"send_email", "send_message", "http_post", "git_p
 # capability_class -> privilege weight (feeds PK aggregate-cap rules).
 _PRIVILEGE: Dict[str, float] = {
     "read": 0.0, "ingest": 0.1, "file_write": 0.2,
-    "exec": 0.3, "tool_lifecycle": 0.3, "network": 0.4, "dataverse": 0.3,
+    "exec": 0.3, "tool_lifecycle": 0.3, "network": 0.4, "dataverse": 0.3, "pipeline": 0.4,
 }
 
 # Default per-class AG baseline authority an operator install grants. Raising these
@@ -107,11 +112,18 @@ DEFAULT_AG_BASELINE: Dict[str, float] = {
     "network": 0.65,       # readonly band — does NOT clear `commit_outward` (full) → gated
     "dataverse": 0.85,     # code band — clears `code_edit` (read/update) but NOT the
     #                        irreversible delete's `commit_outward` (full) → delete gated
+    "pipeline": 0.85,      # code band — health/releases/validate are safe reads; the irreversible
+    #                        submit needs the full band → gated until authority is earned/granted
 }
 
 
-def risk_tier(tool_name: str) -> str:
-    """Return the risk tier for a tool. Unknown tools fail safe to CONSEQUENTIAL."""
+def risk_tier(tool_name: str, classification: Optional[Dict[str, Any]] = None) -> str:
+    """Risk tier for a tool. Resolution order: an explicit `classification` (declared by a
+    dynamically-registered / AA-synthesized tool, carried in the mount F1 registry) → the baked
+    `_TOOL_TABLE` seed (BUILT-IN Hermes tools only) → fail-safe CONSEQUENTIAL (unknown ⇒ treat as
+    having side effects). Dynamic tools must NOT require an edit to this baked file."""
+    if classification:
+        return str(classification.get("risk_tier", CONSEQUENTIAL))
     entry = _TOOL_TABLE.get(tool_name)
     return entry[2] if entry is not None else CONSEQUENTIAL
 
@@ -126,24 +138,33 @@ def _taint_action_type(tool_name: str, default: str) -> str:
 
 def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
               justification_sources: Optional[List[str]] = None,
-              domain: Optional[str] = None) -> Dict[str, Any]:
+              domain: Optional[str] = None,
+              classification: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build a PK/AG `action` dict from a live tool call.
 
-    Unknown tools fail safe: treated as CONSEQUENTIAL with the `exec` class.
+    `classification` is how a DYNAMICALLY-REGISTERED / AA-synthesized tool declares its own
+    governance shape — `{capability_class, action_class, risk_tier, irreversible}` — carried in
+    the mount-resident F1 registry and passed in by the caller. This is the maintainable path:
+    a new tool needs a REGISTRY ENTRY on the durable mount, never an edit to this baked file.
+    Resolution: `classification` → the baked `_TOOL_TABLE` seed (BUILT-IN tools only) → fail-safe
+    (unknown ⇒ CONSEQUENTIAL/exec, treat as having side effects). The resolved risk tier is stored
+    on the action as `_risk_tier`, so the kernel governs dynamic tools without consulting this file.
 
-    `domain` (optional) is the SUBJECT area the action operates in (e.g. 'd365', 'azure',
-    'k8s') — orthogonal to capability_class (read/write/exec/network). When present, the
-    governance gate applies the AG familiarity factor for that domain (effective authority =
-    base × familiarity), so an unfamiliar/stale domain tightens the ceiling. v1 honest limit:
-    domain is caller-supplied; automatic per-tool domain attribution is deferred calibration —
-    a domain-less action is gated on base authority (no familiarity penalty) as before.
+    `domain` (optional) is the SUBJECT area (e.g. 'd365', 'azure', 'k8s') — orthogonal to
+    capability_class — engaging the AG familiarity factor when present.
     """
     args = args if isinstance(args, dict) else {}
-    entry = _TOOL_TABLE.get(tool_name)
-    if entry is not None:
-        capability_class, action_class, _tier = entry
+    if classification:
+        capability_class = classification.get("capability_class", "exec")
+        action_class = classification.get("action_class", "code_edit")
+        tier = classification.get("risk_tier", CONSEQUENTIAL)
+        irreversible = bool(classification.get("irreversible"))
+    elif tool_name in _TOOL_TABLE:
+        capability_class, action_class, tier = _TOOL_TABLE[tool_name]
+        irreversible = tool_name in _IRREVERSIBLE_TOOLS
     else:
-        capability_class, action_class = "exec", "code_edit"  # fail safe
+        capability_class, action_class, tier = "exec", "code_edit", CONSEQUENTIAL  # fail safe
+        irreversible = tool_name in _IRREVERSIBLE_TOOLS
     resource = args.get("path") or args.get("url") or args.get("file_path") or ""
     action = {
         "action_id": uuid.uuid4().hex,
@@ -151,12 +172,13 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
         "tool_name": tool_name,
         "capability_class": capability_class,
         "action_class": action_class,
+        "_risk_tier": tier,             # the kernel reads this → no _TOOL_TABLE lookup for dynamic tools
         "privilege": _PRIVILEGE.get(capability_class, 0.3),
         "resource": resource,
         "justification_sources": list(justification_sources or ["operator"]),
     }
     if domain:
         action["domain"] = domain
-    if tool_name in _IRREVERSIBLE_TOOLS:
+    if irreversible:
         action["irreversible"] = True   # highest-consequence: gated to the FULL band
     return action
