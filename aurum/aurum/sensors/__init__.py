@@ -6,5 +6,7 @@ yet built (build_state SEN stays False); these are the concrete capabilities it 
 """
 # Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from .gmail_2fa import EmailMessage, MailboxReader, TwoFactorExtractor, TwoFactorWatcher
+from .gmail_oauth import GmailApiReader, parse_gmail_message
 
-__all__ = ["EmailMessage", "MailboxReader", "TwoFactorExtractor", "TwoFactorWatcher"]
+__all__ = ["EmailMessage", "MailboxReader", "TwoFactorExtractor", "TwoFactorWatcher",
+           "GmailApiReader", "parse_gmail_message"]
