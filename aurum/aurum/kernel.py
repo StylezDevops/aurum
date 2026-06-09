@@ -36,10 +36,12 @@ from .durability.el import EvidenceLedger
 from .durability.kve import KnowledgeValidityEngine
 from .extensions.sdg import SkillDependencyGraph
 from .extensions.sm import SubstrateMapper
+from .observability.cc import ConcentrationCheck
 from .novel.ag import AuthorityGovernor
 from .novel.oi import OutcomeInterpreter
 from .spine.bb import BlackBox
 from .spine.pk import PolicyKernel
+from .support.rs import ResourceScheduler
 from .support.sen import Sensorium
 from .support.sh import ShadowMode
 from .support.tl import TrustLadder
@@ -136,6 +138,12 @@ class GovernanceKernel:
         # HUMAN_GATE on promotion (tool_lifecycle needs_gate in govern).
         self.sm = SubstrateMapper()
         self.sdg = SkillDependencyGraph()
+        # RS — schedules BACKGROUND organ work (foreground preempts; aging guards starvation), so
+        # background organs go through one budget instead of spinning raw threads. CC — a read-only
+        # concentration view over the live EL; concentration_risks() is the do-not-retire (MGC) /
+        # harden-or-split (TCM) systemic-risk signal. Neither blocks the govern() hot path.
+        self.rs = ResourceScheduler()
+        self.cc = ConcentrationCheck(el=self.el)
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -490,6 +498,28 @@ class GovernanceKernel:
             return {"allowed": True, "stage": "cleared", "scoped": scoped,
                     "affected": affected, "results": results}
         return {"allowed": True, "stage": "cleared", "scoped": scoped}
+
+    # -- background scheduling (RS) + concentration signal (CC) -------------
+
+    def submit_background(self, job: Any, weight: Any) -> None:
+        """Register background organ work with the scheduler. Foreground work preempts; the aging
+        guard keeps a perpetually-deferred job from starving. Background organs (CC scan, MGC
+        cleanup, AA discovery) register here rather than spinning raw unmanaged threads."""
+        self.rs.submit(job, weight)
+
+    def next_background(self) -> Any:
+        """Dispatch the next background job — any foreground job preempts all background; else the
+        highest-scoring one. None if nothing is queued."""
+        return self.rs.next()
+
+    def preempt_background(self, reason: str) -> Any:
+        """Foreground demand arrived: a running background job yields and is requeued."""
+        return self.rs.preempt(reason)
+
+    def concentration_risks(self) -> List[str]:
+        """Artifacts servicing a disproportionate share of ledger activity — the systemic-risk
+        signal CC feeds to MGC (do-not-retire) and TCM (harden-or-split). Read-only; never blocks."""
+        return self.cc.systemic_risks()
 
     # -- failure capture (post-tool-call) -----------------------------------
 
