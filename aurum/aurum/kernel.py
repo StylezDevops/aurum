@@ -38,6 +38,7 @@ from .novel.ag import AuthorityGovernor
 from .novel.oi import OutcomeInterpreter
 from .spine.bb import BlackBox
 from .spine.pk import PolicyKernel
+from .support.sen import Sensorium
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +112,12 @@ class GovernanceKernel:
         # OI judges outcomes AFTER an action runs (the OI→BB→AG loop). bb_record wires
         # OI→BB: OI auto-banks "completed-but-unsatisfied" lessons. el for the audit trail.
         self.oi = OutcomeInterpreter(str(base / "oi.db"), el=self.el, bb_record=self.bb.write)
+        # SEN — the integrated sensorium. Inbound content ingested here is tagged untrusted, so an
+        # action derived from it (built via action_map.action_from_event) is denied binding by PK's
+        # injection boundary (AURUM_ERR_008) when it reaches govern(). This is what flows real
+        # provenance into the live path instead of the operator-by-default assumption.
+        self.sen = Sensorium()
+        self._ingested_untrusted: set = set()
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -378,6 +385,18 @@ class GovernanceKernel:
              "basis": {"authority": self.ag.authority(cc), "band": self.ag.band(cc)},
              "constitutional": False},
         ]
+
+    # -- ingestion (SEN) ----------------------------------------------------
+
+    def ingest(self, source: str, payload: Any = None, **fields: Any) -> Dict[str, Any]:
+        """Integrated ingestion: feed inbound content through the Sensorium (which tags it
+        UNTRUSTED with `source` provenance and rewrites any spoofed 'operator' claim) and record
+        the untrusted source for this turn. The returned event's `justification_sources` carry the
+        untrusted source — pass it to `action_map.action_from_event` so any derived action is
+        denied binding by PK's injection boundary (AURUM_ERR_008) at govern()."""
+        event = self.sen.on_event({"source": source, "payload": payload, **fields})
+        self._ingested_untrusted.add(event.get("source"))
+        return event
 
     # -- failure capture (post-tool-call) -----------------------------------
 
