@@ -9,15 +9,18 @@ from __future__ import annotations
 import itertools
 from typing import Any, Dict, List, Optional
 
-_GOAL_W = 2.0       # goal-relevance weight (GR health steers ordering)
-_AGING_RATE = 1.0   # score boost per scheduling tick waited — the starvation guard
+_GOAL_W = 2.0           # goal-relevance weight (GR health steers ordering)
+_STARVE_BOOST = 1.0e6   # decisive escalation ONCE a job waits past starvation_ticks (L3) — so
+#                         priority is respected normally and aging is a safety net, not a force
+#                         that overrides priority within a few ticks.
 
 
 class ResourceScheduler:
     """Priority queue over BACKGROUND work. Foreground (user-facing) work always preempts
-    background. Score = priority + urgency + 2*goal_relevance - cost + aging-boost; the aging term
-    grows the longer a job waits, so a perpetually-deferred low-priority job eventually out-scores
-    fresh work and runs (starvation guard) rather than starving. Scope is small: it orders/admits
+    background. Score = priority + urgency + 2*goal_relevance - cost; a job that waits past
+    `starvation_ticks` gets a DECISIVE escalation so it runs rather than starving — but aging does
+    NOT override priority before then (the starvation guard is a safety net, not a priority
+    inverter). Scope is small: it orders/admits
     background jobs against a shared budget — it does NOT replace CG's per-step routing or EG's
     branch bounding. Scheduling decisions are surfaced for EL logging at the integration layer."""
 
@@ -47,8 +50,13 @@ class ResourceScheduler:
 
     def _score(self, e: Dict[str, Any]) -> float:
         w = e["w"]
+        base = w["priority"] + w["urgency"] + _GOAL_W * w["goal_relevance"] - w["cost"]
+        # Starvation guard: aging has NO influence until a job has waited past the threshold, then
+        # it escalates DECISIVELY — priority is honoured normally; aging is a safety net (L3).
         age = self._tick - e["submit_tick"]
-        return w["priority"] + w["urgency"] + _GOAL_W * w["goal_relevance"] - w["cost"] + _AGING_RATE * age
+        if age >= self.starvation_ticks:
+            return base + _STARVE_BOOST * (age - self.starvation_ticks + 1)
+        return base
 
     def next(self) -> Any:
         """Dispatch the next job: any foreground job preempts all background; else the highest-

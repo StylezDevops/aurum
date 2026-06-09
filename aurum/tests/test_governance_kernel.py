@@ -284,7 +284,11 @@ def test_tampered_ledger_not_rehydrated(tmp_path):
 def test_verify_fail_logs_integrity_alarm(tmp_path):
     k = _k(tmp_path)
     k.el.verify_chain = lambda: False  # type: ignore[method-assign]
-    assert k._authority_history() == {}
+    # The single integrity gate now lives in _verify_chain_safe — the chain is verified ONCE per
+    # construction and shared by every projection (M3). A verify failure returns False + logs the
+    # alarm; the projections then no-op on chain_ok=False (no authority/familiarity/TL rehydrated).
+    assert k._verify_chain_safe() is False
+    assert k._authority_history(False) == {}
     events = k.el.query({"action_type": "GOVERNANCE_DECISION"})
     assert any(e["payload"].get("outcome") == "integrity_alarm" for e in events)
 
