@@ -138,3 +138,9 @@ RELEASE_v*.md
 temp/
 secrets/
 *.env
+
+# Private 24KR label-ops instance design (us-only)
+aurum_24kr_labelops_design.md
+
+# Private instance layer (24KR label-ops) — never in public Aurum
+instance/
