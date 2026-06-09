@@ -20,7 +20,7 @@ BUILT: dict[str, bool] = {
     "AA": True, "LS": True, "HVP": True, "EG": True,
     "CS": True, "AG": True, "OI": True,
     # Tier 2 extensions
-    "SDG": False, "SM": False,
+    "SDG": False, "SM": True,
     # Tier 3 support
     "TL": True, "CB": True, "SH": True, "CG": True, "RS": True, "SEN": True,
     # Tier 3.5 observability — DERIVED VIEWS over EL, not first-class organs
