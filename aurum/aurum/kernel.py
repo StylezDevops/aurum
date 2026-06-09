@@ -34,6 +34,8 @@ from .arbitration.ca import ConflictArbiter
 from .durability.clock import RealDomainClock
 from .durability.el import EvidenceLedger
 from .durability.kve import KnowledgeValidityEngine
+from .extensions.sdg import SkillDependencyGraph
+from .extensions.sm import SubstrateMapper
 from .novel.ag import AuthorityGovernor
 from .novel.oi import OutcomeInterpreter
 from .spine.bb import BlackBox
@@ -128,6 +130,12 @@ class GovernanceKernel:
         # for actions that declare a required_tier, ALONGSIDE AG (live authority). Fed from the
         # grounded outcome loop (record_outcome_verdict). NEVER the final word — AG still gates.
         self.tl = TrustLadder()
+        # SM + SDG — the self-improvement pre-promotion gate (see gate_self_improvement): SM scopes
+        # a proposal to the domain's substrate (reject cross-/unmapped pre-gate); SDG re-runs the
+        # transitive dependents' goldens (blocked on any red). A cleared proposal still faces the
+        # HUMAN_GATE on promotion (tool_lifecycle needs_gate in govern).
+        self.sm = SubstrateMapper()
+        self.sdg = SkillDependencyGraph()
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -450,6 +458,38 @@ class GovernanceKernel:
         result = self.sh.commit(sh_action)
         return {"governed": True, "committed": bool(result.get("committed")),
                 "shadow": diff, "result": result}
+
+    # -- self-improvement pre-promotion gate (SM + SDG) ---------------------
+
+    def gate_self_improvement(self, proposal: Dict[str, Any], domain: str, *,
+                              golden_runner: Any = None) -> Dict[str, Any]:
+        """Pre-promotion gate for a self-improvement proposal (TS/LS/AA). Two stages, both
+        BEFORE the human promotion gate:
+          1. SM scopes it to the domain's substrate — a cross-substrate or unmapped-domain
+             proposal is rejected PRE-GATE (evolution can't target the wrong substrate).
+          2. If it targets a skill, SDG re-runs the transitive dependents' golden scenarios —
+             promotion is blocked on ANY red, including transitive dependents.
+        A proposal that clears BOTH still faces the HUMAN_GATE on actual promotion (a
+        `tool_lifecycle` action is `needs_gate` in govern). Returns {allowed, stage, ...}."""
+        scoped = self.sm.scope(proposal, domain)
+        if not scoped.get("scoped"):
+            self._best_effort_log("self_improvement_blocked", {"action_id": "self-improve"},
+                                  {"stage": "substrate", "domain": domain,
+                                   "reason": scoped.get("reason")})
+            return {"allowed": False, "stage": "substrate", "reason": scoped.get("reason")}
+        skill = proposal.get("skill") if isinstance(proposal, dict) else None
+        if skill and golden_runner is not None:
+            affected = self.sdg.affected(skill)
+            results = self.sdg.regress(affected, runner=golden_runner)
+            if not self.sdg.promotion_allowed(results):
+                red = [s for s, ok in results.items() if not ok]
+                self._best_effort_log("self_improvement_blocked", {"action_id": "self-improve"},
+                                      {"stage": "regression", "skill": skill, "red": red})
+                return {"allowed": False, "stage": "regression", "affected": affected,
+                        "results": results, "red": red}
+            return {"allowed": True, "stage": "cleared", "scoped": scoped,
+                    "affected": affected, "results": results}
+        return {"allowed": True, "stage": "cleared", "scoped": scoped}
 
     # -- failure capture (post-tool-call) -----------------------------------
 
