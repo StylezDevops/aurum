@@ -39,6 +39,7 @@ from .novel.oi import OutcomeInterpreter
 from .spine.bb import BlackBox
 from .spine.pk import PolicyKernel
 from .support.sen import Sensorium
+from .support.sh import ShadowMode
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,10 @@ class GovernanceKernel:
         # provenance into the live path instead of the operator-by-default assumption.
         self.sen = Sensorium()
         self._ingested_untrusted: set = set()
+        # SH — shadow mode. An irreversible action is simulated on a COPY (no side effects) and
+        # only committed for real on an 'ok' verdict (see shadow_commit). Makes the shadow
+        # containment we applied ad hoc to gated irreversible actions principled + automatic.
+        self.sh = ShadowMode()
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -397,6 +402,33 @@ class GovernanceKernel:
         event = self.sen.on_event({"source": source, "payload": payload, **fields})
         self._ingested_untrusted.add(event.get("source"))
         return event
+
+    # -- shadow-contained irreversible execution (SH) -----------------------
+
+    def shadow_commit(self, action: Dict[str, Any], *, state: Any = None,
+                      apply: Any = None) -> Dict[str, Any]:
+        """Govern + shadow-contain an irreversible action. (1) `govern()` must allow. (2) for an
+        action flagged `irreversible`, SH.simulate runs `apply` on a COPY of `state` (no side
+        effects) and ONLY an 'ok' verdict permits SH.commit to apply it for real — so an
+        irreversible commit can never happen on a failed simulation, even after governance allows.
+        Reversible actions need no shadow gate. The execution effect (`state`, `apply`) is kept
+        SEPARATE from the governance `action` so the action stays clean + serializable for EL.
+        Returns `{governed, committed, shadow, ...}`."""
+        decision = self.govern(action)
+        if not decision.allow:
+            return {"governed": False, "committed": False,
+                    "rule_id": decision.rule_id, "reason": decision.reason}
+        if not action.get("irreversible"):
+            return {"governed": True, "committed": None, "shadow": None,
+                    "note": "reversible — no shadow gate (caller commits directly)"}
+        sh_action = {"id": str(action.get("action_id") or "action"), "state": state, "apply": apply}
+        diff = self.sh.simulate(sh_action)
+        if diff["verdict"] != "ok":
+            return {"governed": True, "committed": False, "shadow": diff,
+                    "reason": "shadow simulation failed — not committed"}
+        result = self.sh.commit(sh_action)
+        return {"governed": True, "committed": bool(result.get("committed")),
+                "shadow": diff, "result": result}
 
     # -- failure capture (post-tool-call) -----------------------------------
 
