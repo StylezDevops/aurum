@@ -7,16 +7,53 @@ disproportionate share of workflows/writes/promotions as systemic risk. Feeds MG
 """
 from __future__ import annotations
 
-from typing import Dict, List
-
-from ..base import unbuilt
+from typing import Any, Dict, List
 
 
 class ConcentrationCheck:
+    """Read-only concentration view. `concentration()` = each artifact's share of ledger events
+    that reference it (the usage distribution). `systemic_risks()` = the artifacts whose share
+    crosses `threshold` (single points of concentration), suppressed below `min_events` so a tiny
+    sample can't flag a 1/1 artifact as 100% systemic. Returns findings; never writes, never blocks."""
+
     ORGAN = "CC"
 
+    def __init__(self, el: Any = None, *, threshold: float = 0.5, min_events: int = 4) -> None:
+        # Derived view over EL; el optional so the organ instantiates bare.
+        self._el = el
+        self.threshold = float(threshold)
+        self.min_events = int(min_events)
+
+    def _events(self) -> List[Dict[str, Any]]:
+        if self._el is None:
+            raise RuntimeError("CC is a derived view over EL; an EvidenceLedger is required")
+        # Read THROUGH EL's public surface (never EL._db), same as IDM/MPD.
+        return list(self._el.iter_events(ascending=True))
+
+    @staticmethod
+    def _shares(events: List[Dict[str, Any]]) -> Dict[str, float]:
+        total = len(events)
+        if total == 0:
+            return {}
+        counts: Dict[str, int] = {}
+        for ev in events:
+            # set() so multiple references to one artifact in a single event count once —
+            # we measure "in what fraction of events does this artifact appear".
+            for oid in set(ev.get("object_ids") or []):
+                counts[oid] = counts.get(oid, 0) + 1
+        return {oid: n / total for oid, n in counts.items()}
+
     def concentration(self) -> Dict[str, float]:
-        raise unbuilt(self.ORGAN, "concentration")
+        """artifact_id -> share of all ledger events that reference it (0..1)."""
+        return self._shares(self._events())
 
     def systemic_risks(self) -> List[str]:
-        raise unbuilt(self.ORGAN, "systemic_risks")
+        """Artifacts whose share >= threshold — disproportionate single points of concentration,
+        ordered by share desc. Empty below `min_events`. Feeds MGC (do-not-retire) + TCM
+        (harden-or-split); never blocks."""
+        events = self._events()
+        if len(events) < self.min_events:
+            return []
+        shares = self._shares(events)
+        ranked = sorted(shares.items(), key=lambda kv: (-kv[1], kv[0]))
+        return [oid for oid, share in ranked if share >= self.threshold]
