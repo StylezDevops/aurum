@@ -24,7 +24,7 @@ BUILT: dict[str, bool] = {
     # Tier 3 support
     "TL": False, "CB": True, "SH": False, "CG": True, "RS": False, "SEN": True,
     # Tier 3.5 observability — DERIVED VIEWS over EL, not first-class organs
-    "IDM": True, "MPD": True, "CC": False,
+    "IDM": True, "MPD": True, "CC": True,
     # Tier 4 deferred (stays False — documented boundary, not built in v1)
     "AO": False,
     # Arbitration layer (MECHANISMS, not organs) — CA synchronous, DD asynchronous.
