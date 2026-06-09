@@ -40,6 +40,7 @@ from .spine.bb import BlackBox
 from .spine.pk import PolicyKernel
 from .support.sen import Sensorium
 from .support.sh import ShadowMode
+from .support.tl import TrustLadder
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +124,10 @@ class GovernanceKernel:
         # only committed for real on an 'ok' verdict (see shadow_commit). Makes the shadow
         # containment we applied ad hoc to gated irreversible actions principled + automatic.
         self.sh = ShadowMode()
+        # TL — trust ladder. The action-vs-scope split: govern() consults TL.can (earned SCOPE)
+        # for actions that declare a required_tier, ALONGSIDE AG (live authority). Fed from the
+        # grounded outcome loop (record_outcome_verdict). NEVER the final word — AG still gates.
+        self.tl = TrustLadder()
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -362,6 +367,22 @@ class GovernanceKernel:
                 reason=f"ag-ceiling: '{cc}' requires higher authority "
                        f"(band={band}); raise authority to permit")
 
+        # 5b. TL scope check (action-vs-scope split). If the action declares a `required_tier`,
+        #     the EARNED tier (TL = SCOPE) must meet it — INDEPENDENT of AG. AG already gated above
+        #     (a high tier can't rescue low authority); here, sufficient authority still does NOT
+        #     permit if the earned scope is below what the action requires. TL is ONE input, never
+        #     the final word. Only actions that declare a required_tier are scope-gated.
+        required_tier = action.get("required_tier")
+        if required_tier is not None:
+            cc_t = action.get("capability_class", "default")
+            if not self.tl.can({"capability": cc_t, "required_tier": required_tier}):
+                self._best_effort_log("deny", action, {"rule_id": "tl:tier",
+                                      "required_tier": required_tier, "tier": self.tl.tier(cc_t)})
+                return GovernanceDecision(
+                    allow=False, rule_id="tl:tier",
+                    reason=f"tl-scope: '{cc_t}' earned tier {self.tl.tier(cc_t)} < "
+                           f"required {required_tier}")
+
         # 6. CA arbitration. CA fault ⇒ peripheral.
         try:
             ca_result = self.ca.arbitrate(action, self._ca_signals(action, pk_result))
@@ -554,6 +575,11 @@ class GovernanceKernel:
             }
             self.ag.apply_outcome(capability_class, good=bool(satisfied), grounded=True,
                                   environment=environment, cause=cause)
+            # TL is auto-fed from this grounded (OI ground-truth) outcome: a grounded-good verdict
+            # earns scope (tier-up, capped at ceiling); a grounded-bad verdict tiers down. Proxy
+            # never reaches here, so proxy never earns TL scope (mirrors the AG promote-slow rule).
+            self.tl.ingest({"capability": capability_class,
+                            "outcome": "success" if satisfied else "failure", "grounded": True})
             # Durable FIRST (the EL grounded-outcome event is the source of truth that
             # rehydration replays), THEN the in-memory familiarity projection.
             self._best_effort_log(
