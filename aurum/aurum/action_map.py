@@ -139,7 +139,8 @@ def _taint_action_type(tool_name: str, default: str) -> str:
 def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
               justification_sources: Optional[List[str]] = None,
               domain: Optional[str] = None,
-              classification: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+              classification: Optional[Dict[str, Any]] = None,
+              operator_origin: bool = False) -> Dict[str, Any]:
     """Build a PK/AG `action` dict from a live tool call.
 
     `classification` is how a DYNAMICALLY-REGISTERED / AA-synthesized tool declares its own
@@ -181,6 +182,8 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
         action["domain"] = domain
     if irreversible:
         action["irreversible"] = True   # highest-consequence: gated to the FULL band
+    if operator_origin:
+        action["origin"] = "operator"   # explicit operator-channel attribution (M2 tainted-turn)
     return action
 
 

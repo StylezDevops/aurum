@@ -1,7 +1,7 @@
-"""Phase G(b) — SH wired into the kernel: an irreversible action is governed, then shadow-
-simulated (no side effects), and only committed on a clean verdict. A gated action never
-simulates/commits; a failing simulation blocks the commit even after governance allows. The
-execution effect (state/apply) is kept SEPARATE from the governance action."""
+"""Phase G(b) / H2 — SH wired into the kernel via a TRUE dry-run/commit split: an irreversible
+action is governed, a SIDE-EFFECT-FREE preview is run, and the real commit fires only on a clean
+preview. A gated action never previews/commits; a failing preview blocks the commit and the real
+outward op never fires (the H2 containment property)."""
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.action_map import to_action
 from aurum.kernel import GovernanceKernel
@@ -26,36 +26,38 @@ def test_kernel_owns_shadow(tmp_path):
     assert isinstance(GovernanceKernel(home=str(tmp_path)).sh, ShadowMode)
 
 
-def test_gated_irreversible_never_simulates_or_commits(tmp_path):
+def test_gated_irreversible_never_previews_or_commits(tmp_path):
     k = GovernanceKernel(home=str(tmp_path))
-    state = {"done": False}
-    res = k.shadow_commit(_irrev_action(), state=state, apply=lambda s: s.__setitem__("done", True))
+    pv, cm = [], []
+    res = k.shadow_commit(_irrev_action(), preview=lambda: pv.append(1), commit=lambda: cm.append(1))
     assert res["governed"] is False and res["committed"] is False   # AG ceiling denies at baseline
-    assert state == {"done": False}                                 # no side effect, no shadow run
+    assert pv == [] and cm == []                                    # neither ran
 
 
-def test_allowed_irreversible_simulates_then_commits(tmp_path):
+def test_allowed_irreversible_previews_then_commits(tmp_path):
     k = GovernanceKernel(home=str(tmp_path))
     _raise_to_full(k, "network")
-    state = {"done": False}
-    res = k.shadow_commit(_irrev_action(), state=state, apply=lambda s: s.__setitem__("done", True))
+    log = []
+    res = k.shadow_commit(
+        _irrev_action(),
+        preview=lambda: log.append("previewed") or {"plan": "would POST"},
+        commit=lambda: log.append("committed") or "done")
     assert res["governed"] is True and res["committed"] is True
-    assert res["shadow"]["verdict"] == "ok"
-    assert state == {"done": True}                                  # real commit applied after sim
+    assert res["plan"] == {"plan": "would POST"} and res["result"] == "done"
+    assert log == ["previewed", "committed"]            # preview first, THEN the real commit
 
 
-def test_failing_simulation_blocks_commit_even_when_governed(tmp_path):
+def test_failing_preview_blocks_commit_no_real_side_effect(tmp_path):
     k = GovernanceKernel(home=str(tmp_path))
     _raise_to_full(k, "network")
-    state = {"done": False}
+    posted = []
 
-    def boom(_s):
+    def preview():
         raise RuntimeError("dry-run failed")
 
-    res = k.shadow_commit(_irrev_action(), state=state, apply=boom)
+    res = k.shadow_commit(_irrev_action(), preview=preview, commit=lambda: posted.append("POST"))
     assert res["governed"] is True and res["committed"] is False
-    assert res["shadow"]["verdict"] == "error"
-    assert state == {"done": False}                                 # governance allowed, shadow blocked
+    assert posted == []                                 # H2: the real outward op NEVER fired
 
 
 def test_reversible_action_has_no_shadow_gate(tmp_path):

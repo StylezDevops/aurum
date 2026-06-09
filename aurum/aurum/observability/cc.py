@@ -7,7 +7,7 @@ disproportionate share of workflows/writes/promotions as systemic risk. Feeds MG
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class ConcentrationCheck:
@@ -18,17 +18,24 @@ class ConcentrationCheck:
 
     ORGAN = "CC"
 
-    def __init__(self, el: Any = None, *, threshold: float = 0.5, min_events: int = 4) -> None:
-        # Derived view over EL; el optional so the organ instantiates bare.
+    def __init__(self, el: Any = None, *, threshold: float = 0.5, min_events: int = 4,
+                 window: Optional[int] = None) -> None:
+        # Derived view over EL; el optional so the organ instantiates bare. `window` (L4): when
+        # set, concentration is measured over the most RECENT `window` events — both a bound on
+        # the working set for a large ledger and a more useful "recent concentration" semantic.
         self._el = el
         self.threshold = float(threshold)
         self.min_events = int(min_events)
+        self._window = int(window) if window else None
 
     def _events(self) -> List[Dict[str, Any]]:
         if self._el is None:
             raise RuntimeError("CC is a derived view over EL; an EvidenceLedger is required")
         # Read THROUGH EL's public surface (never EL._db), same as IDM/MPD.
-        return list(self._el.iter_events(ascending=True))
+        events = list(self._el.iter_events(ascending=True))
+        if self._window is not None and self._window > 0:
+            return events[-self._window:]            # recency window (L4)
+        return events
 
     @staticmethod
     def _shares(events: List[Dict[str, Any]]) -> Dict[str, float]:

@@ -164,7 +164,8 @@ class GovernanceKernel:
         """Project AG authority from the durable EL (verify-gated); seed baseline only for
         classes with no durable history. Restore is SILENT (no re-audit) — the values were
         logged when first set; replaying them must not write phantom TRUST_CHANGE events."""
-        history = self._authority_history()  # {} if empty OR if the chain failed to verify
+        chain_ok = self._verify_chain_safe()  # verify the durable ledger ONCE; shared below (M3)
+        history = self._authority_history(chain_ok)
         for cc, val in baseline.items():
             if cc in history:
                 auth, earned = history[cc]
@@ -174,17 +175,30 @@ class GovernanceKernel:
         for cc, (auth, earned) in history.items():
             if cc not in baseline:
                 self.ag.restore_authority(cc, auth, earned_in=earned)
-        self._rehydrate_familiarity()
+        self._rehydrate_familiarity(chain_ok)
+        self._rehydrate_tl(chain_ok)  # H1: TL earned-autonomy tiers survive --rm, like authority
 
-    def _rehydrate_familiarity(self) -> None:
-        """Rebuild the familiarity projection from the durable EL grounded-outcome stream —
-        verify_chain-gated (a tampered ledger drives NO familiarity → floor, fail-safe), same
-        discipline as authority rehydration. Replays only HUMAN-GROUNDED-GOOD, domain-scoped
-        outcome_verdict events (proxy never built familiarity, so there is nothing to replay)."""
+    def _verify_chain_safe(self) -> bool:
+        """Verify the durable EL chain ONCE per construction — the single integrity gate shared by
+        every projection below (authority, familiarity, TL). A tampered/unverifiable ledger drives
+        NO rehydration (fail-safe = low-trust baseline only) and logs an integrity alarm. Replaces
+        the previous per-projection re-verification, which walked the chain 2-3× per startup (M3)."""
         try:
-            if not self.el.verify_chain():
-                return
+            if self.el.verify_chain():
+                return True
+            self._best_effort_log(
+                "integrity_alarm", {"action_id": "el-integrity"},
+                {"reason": "EL.verify_chain failed — projections NOT rehydrated; baseline only"})
+            return False
         except Exception:
+            return False
+
+    def _rehydrate_familiarity(self, chain_ok: bool) -> None:
+        """Rebuild the familiarity projection from the durable EL grounded-outcome stream (the
+        chain was verified once upstream — a tampered ledger drives NO familiarity → floor, the
+        fail-safe). Replays only HUMAN-GROUNDED-GOOD, domain-scoped outcome_verdict events (proxy
+        never built familiarity, so there is nothing to replay)."""
+        if not chain_ok:
             return
         records: List[tuple] = []
         try:
@@ -199,6 +213,30 @@ class GovernanceKernel:
             return
         if records:
             self.ag.replay_familiarity(records)
+
+    def _rehydrate_tl(self, chain_ok: bool) -> None:
+        """Rebuild TL tiers from the durable EL grounded-outcome stream (H1) — so earned autonomy
+        SURVIVES --rm, the same persistence-as-projection AG authority + familiarity already use
+        (without it, TL reset to 0 every ephemeral message and never earned anything in the cage).
+        Replays human-grounded outcome_verdict events per capability_class IN CHRONOLOGICAL ORDER
+        (tier-up/down sequence matters); verify-gated (tampered ledger → no tiers, the fail-safe)."""
+        if not chain_ok:
+            return
+        events: List[tuple] = []
+        try:
+            for ev in self.el.query({"source_organ": "GOV",
+                                     "action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}):
+                p = ev.get("payload") or {}
+                cc = p.get("capability_class")
+                if (p.get("outcome") == "outcome_verdict"
+                        and p.get("satisfaction_source") == "human" and cc):
+                    events.append((cc, bool(p.get("satisfied"))))
+        except Exception:
+            return
+        # query yields newest→oldest; replay oldest→newest so the tier evolution is faithful.
+        for cc, satisfied in reversed(events):
+            self.tl.ingest({"capability": cc,
+                            "outcome": "success" if satisfied else "failure", "grounded": True})
 
     def _familiarity_inputs(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Familiarity gating inputs for an action, or {} when it is not domain-scoped. A
@@ -216,19 +254,13 @@ class GovernanceKernel:
             validity = 0.0  # unknown knowledge validity = decayed (never fresh)
         return {"now": now, "validity": validity, "volatility": self.kve.volatility(domain)}
 
-    def _authority_history(self) -> Dict[str, Any]:
-        """Last authority per capability_class from the DURABLE EL — ONLY if the chain
-        verifies. A tampered durable ledger MUST NOT drive authority (the new obligation
-        durable state creates): on verify failure we log an integrity alarm and return {},
-        so the kernel falls back to the low-trust baseline (fail-safe = contraction)."""
-        try:
-            if not self.el.verify_chain():
-                self._best_effort_log(
-                    "integrity_alarm", {"action_id": "el-integrity"},
-                    {"reason": "EL.verify_chain failed — authority NOT rehydrated; baseline only"})
-                return {}
-        except Exception:
-            return {}  # cannot verify → do not project (fail-safe)
+    def _authority_history(self, chain_ok: bool) -> Dict[str, Any]:
+        """Last authority per capability_class from the DURABLE EL — ONLY if the chain verified
+        (done once upstream in _verify_chain_safe). A tampered durable ledger MUST NOT drive
+        authority: chain_ok is False there, so we return {} and the kernel falls back to the
+        low-trust baseline (fail-safe = contraction)."""
+        if not chain_ok:
+            return {}
         last: Dict[str, Any] = {}
         try:
             # query returns seq DESC, so the first time we see a class is its latest value
@@ -305,6 +337,17 @@ class GovernanceKernel:
         return GovernanceDecision(
             allow=False, degraded=True, rule_id="gov:degraded",
             reason=f"degraded to read-only ({reason}); {tier} blocked")
+
+    # -- turn boundary ------------------------------------------------------
+
+    def new_turn(self) -> None:
+        """Reset per-turn state at a turn boundary: the within-turn chain log and the turn's
+        ingested-untrusted-source set. The ephemeral cage (one process per message) gets this for
+        free, but a long-lived/host kernel or back-to-back turns MUST call it so within-turn taint
+        analysis stays within-turn and `_action_log` / `_ingested_untrusted` don't grow unbounded
+        (M1). Authority/familiarity/TL persist via EL projection and are deliberately NOT reset."""
+        self._action_log.clear()
+        self._ingested_untrusted.clear()
 
     # -- main entry ---------------------------------------------------------
 
@@ -399,6 +442,24 @@ class GovernanceKernel:
                     reason=f"tl-scope: '{cc_t}' earned tier {self.tl.tier(cc_t)} < "
                            f"required {required_tier}")
 
+        # 5c. Tainted-turn guard (M2). In a turn that ingested UNTRUSTED content, an IRREVERSIBLE
+        #     action that is NOT explicitly operator-attributed is denied — ingested content must
+        #     not be able to drive an irreversible commit even after authority + scope clear. This
+        #     is the highest-consequence class only (irreversible); reversible/consequential actions
+        #     proceed (backstopped by AG) but are flagged tainted_context for audit. The operator's
+        #     own channel sets origin='operator' (action_map.to_action(operator_origin=True)) to act.
+        if self._ingested_untrusted and action.get("irreversible") and action.get("origin") != "operator":
+            self._best_effort_log("deny", action, {"rule_id": "gov:tainted-irreversible",
+                                  "ingested": sorted(s for s in self._ingested_untrusted if s)})
+            return GovernanceDecision(
+                allow=False, rule_id="gov:tainted-irreversible",
+                reason="tainted turn: untrusted content was ingested this turn and this irreversible "
+                       "action is not operator-attributed — blocked")
+        if self._ingested_untrusted:
+            self._best_effort_log("tainted_context", action,
+                                  {"note": "consequential action in a turn that ingested untrusted "
+                                           "content; proceeding (AG-gated), flagged for audit"})
+
         # 6. CA arbitration. CA fault ⇒ peripheral.
         try:
             ca_result = self.ca.arbitrate(action, self._ca_signals(action, pk_result))
@@ -442,15 +503,16 @@ class GovernanceKernel:
 
     # -- shadow-contained irreversible execution (SH) -----------------------
 
-    def shadow_commit(self, action: Dict[str, Any], *, state: Any = None,
-                      apply: Any = None) -> Dict[str, Any]:
-        """Govern + shadow-contain an irreversible action. (1) `govern()` must allow. (2) for an
-        action flagged `irreversible`, SH.simulate runs `apply` on a COPY of `state` (no side
-        effects) and ONLY an 'ok' verdict permits SH.commit to apply it for real — so an
-        irreversible commit can never happen on a failed simulation, even after governance allows.
-        Reversible actions need no shadow gate. The execution effect (`state`, `apply`) is kept
-        SEPARATE from the governance `action` so the action stays clean + serializable for EL.
-        Returns `{governed, committed, shadow, ...}`."""
+    def shadow_commit(self, action: Dict[str, Any], *, preview: Any = None,
+                      commit: Any = None) -> Dict[str, Any]:
+        """Govern + shadow-contain an irreversible action via a TRUE dry-run/commit split (H2).
+        (1) `govern()` must allow. (2) for an action flagged `irreversible`, `preview` — a
+        SIDE-EFFECT-FREE dry-run that returns the plan/diff (the caller's contract: a real /validate,
+        a render, a no-op compute — NOT the real op) — is run through SH for a verdict + no-replay;
+        only an 'ok' verdict permits `commit` (the real, irreversible op) to run, and the verdict is
+        consumed. Because `preview` is NOT the real op, a genuine outward effect (a network POST, an
+        LE submit) does NOT fire during simulation — unlike running one mutator for both. Reversible
+        actions need no shadow gate. Returns `{governed, committed, plan, shadow, ...}`."""
         decision = self.govern(action)
         if not decision.allow:
             return {"governed": False, "committed": False,
@@ -458,14 +520,25 @@ class GovernanceKernel:
         if not action.get("irreversible"):
             return {"governed": True, "committed": None, "shadow": None,
                     "note": "reversible — no shadow gate (caller commits directly)"}
-        sh_action = {"id": str(action.get("action_id") or "action"), "state": state, "apply": apply}
-        diff = self.sh.simulate(sh_action)
+        aid = str(action.get("action_id") or "action")
+        plan: Dict[str, Any] = {}
+        # Run the side-effect-free preview through SH (verdict + no-replay). A preview that raises
+        # → verdict 'error' → commit blocked. The preview's return is the captured plan/diff.
+        diff = self.sh.simulate({"id": aid, "state": {},
+                                 "apply": (lambda _s: plan.update(p=preview())) if callable(preview) else None})
         if diff["verdict"] != "ok":
             return {"governed": True, "committed": False, "shadow": diff,
-                    "reason": "shadow simulation failed — not committed"}
-        result = self.sh.commit(sh_action)
-        return {"governed": True, "committed": bool(result.get("committed")),
-                "shadow": diff, "result": result}
+                    "plan": plan.get("p"), "reason": "preview (dry-run) failed — not committed"}
+        out: Dict[str, Any] = {}
+        try:
+            # The REAL op runs only after an ok preview, gated + consumed by SH (no replay).
+            self.sh.commit({"id": aid, "state": {},
+                            "apply": (lambda _s: out.update(r=commit())) if callable(commit) else None})
+        except Exception as e:  # noqa: BLE001 — surface a real commit failure, never crash the turn
+            return {"governed": True, "committed": False, "shadow": diff,
+                    "plan": plan.get("p"), "error": f"commit failed: {type(e).__name__}: {e}"}
+        return {"governed": True, "committed": True, "plan": plan.get("p"),
+                "shadow": diff, "result": out.get("r")}
 
     # -- self-improvement pre-promotion gate (SM + SDG) ---------------------
 
