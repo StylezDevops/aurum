@@ -182,3 +182,26 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
     if irreversible:
         action["irreversible"] = True   # highest-consequence: gated to the FULL band
     return action
+
+
+def action_from_event(event: Dict[str, Any], tool_name: str,
+                      args: Optional[Dict[str, Any]] = None, *,
+                      domain: Optional[str] = None,
+                      classification: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Build an action DRIVEN BY ingested content (a SEN-tagged event). Its `justification_sources`
+    are the event's UNTRUSTED provenance (the watcher id — never 'operator'), so the action is
+    denied binding by PK's injection boundary (AURUM_ERR_008): ingested content cannot trigger
+    actions. This is the bridge that flows SEN provenance into the live `govern()` path, instead of
+    the `justification_sources=['operator']` default that assumes the operator's direct channel.
+    Fail-safe: an event with no provenance is still treated as untrusted, never operator."""
+    sources: List[str] = []
+    if isinstance(event, dict):
+        sources = [str(s) for s in (event.get("justification_sources") or [])]
+        if not sources and event.get("source"):
+            sources = [str(event["source"])]
+    # never let ingested content claim (or default to) operator trust
+    sources = [s for s in sources if s != "operator"] or ["sen:untrusted"]
+    action = to_action(tool_name, args, justification_sources=sources, domain=domain,
+                       classification=classification)
+    action["origin"] = "ingested"
+    return action
