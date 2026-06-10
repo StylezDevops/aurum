@@ -4,6 +4,7 @@ preview. A gated action never previews/commits; a failing preview blocks the com
 outward op never fires (the H2 containment property)."""
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.action_map import to_action
+from aurum.durability.clock import DomainClock
 from aurum.kernel import GovernanceKernel
 from aurum.support.sh import ShadowMode
 
@@ -11,10 +12,17 @@ _IRREV = {"capability_class": "network", "action_class": "commit_outward",
           "risk_tier": "consequential", "irreversible": True}
 
 
+def _full_kernel(tmp_path):
+    # An injectable DomainClock so we can SPACE the grounded outcomes past the band promotion
+    # dwell (AURUM_ERR_010) — earning full authority is dwell-paced in a long-lived kernel.
+    return GovernanceKernel(home=str(tmp_path), domain_clock=DomainClock(1_000_000.0))
+
+
 def _raise_to_full(k, cc):
     for i in range(40):
         if k.ag.band(cc) == "full":
             break
+        k._domain_clock.advance(61.0)            # > dwell_seconds, so each band crossing clears
         k.record_outcome_verdict(f"t{i}", cc, satisfied=True)
 
 
@@ -35,7 +43,7 @@ def test_gated_irreversible_never_previews_or_commits(tmp_path):
 
 
 def test_allowed_irreversible_previews_then_commits(tmp_path):
-    k = GovernanceKernel(home=str(tmp_path))
+    k = _full_kernel(tmp_path)
     _raise_to_full(k, "network")
     log = []
     res = k.shadow_commit(
@@ -48,7 +56,7 @@ def test_allowed_irreversible_previews_then_commits(tmp_path):
 
 
 def test_failing_preview_blocks_commit_no_real_side_effect(tmp_path):
-    k = GovernanceKernel(home=str(tmp_path))
+    k = _full_kernel(tmp_path)
     _raise_to_full(k, "network")
     posted = []
 
