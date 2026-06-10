@@ -102,7 +102,9 @@ class GovernanceKernel:
     def __init__(self, home: str, rules: Optional[List[Dict[str, Any]]] = None,
                  ag_baseline: Optional[Dict[str, float]] = None,
                  domain_clock: Any = None,
-                 identity_bindings: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+                 identity_bindings: Optional[Dict[str, Dict[str, Any]]] = None,
+                 injection_screener: Any = None,
+                 screen_block_threshold: float = 0.8) -> None:
         base = Path(home) / "governance"
         base.mkdir(parents=True, exist_ok=True)
         # PK first (el=None) — the kernel owns EL logging, which avoids the PK<->EL
@@ -125,8 +127,15 @@ class GovernanceKernel:
         # action derived from it (built via action_map.action_from_event) is denied binding by PK's
         # injection boundary (AURUM_ERR_008) when it reaches govern(). This is what flows real
         # provenance into the live path instead of the operator-by-default assumption.
-        self.sen = Sensorium()
+        # SEN's optional injection SCREENER (a sensor over inbound text). With one wired, ingest()
+        # reads the verdict and ESCALATES a high-confidence/override hit to HOT taint — never relaxes
+        # the gate, never sanitises. None → base provenance taint only (the structural floor).
+        self.sen = Sensorium(screener=injection_screener)
         self._ingested_untrusted: set = set()
+        # Sources whose ingested content the screener flagged as a likely injection THIS turn. The
+        # hot-taint escalation: blocks ALL non-operator consequential actions, not just irreversible.
+        self._ingested_hostile: set = set()
+        self._screen_threshold = float(screen_block_threshold)
         # SH — shadow mode. An irreversible action is simulated on a COPY (no side effects) and
         # only committed for real on an 'ok' verdict (see shadow_commit). Makes the shadow
         # containment we applied ad hoc to gated irreversible actions principled + automatic.
@@ -379,6 +388,7 @@ class GovernanceKernel:
         (M1). Authority/familiarity/TL persist via EL projection and are deliberately NOT reset."""
         self._action_log.clear()
         self._ingested_untrusted.clear()
+        self._ingested_hostile.clear()
 
     # -- main entry ---------------------------------------------------------
 
@@ -473,6 +483,19 @@ class GovernanceKernel:
                     reason=f"tl-scope: '{cc_t}' earned tier {self.tl.tier(cc_t)} < "
                            f"required {required_tier}")
 
+        # 5c-hot. Screener escalation: SEN's injection screener flagged ingested content THIS turn
+        #     as a likely override/exfil attempt (HOT taint). Escalate BEYOND the irreversible-only
+        #     guard — block ALL non-operator consequential/ingest actions, since the whole turn's
+        #     reasoning is suspect. SAFE_READ already short-circuited above (reading the hostile
+        #     content to process it stays allowed); operator-attributed actions still proceed.
+        if self._ingested_hostile and action.get("origin") != "operator":
+            self._best_effort_log("deny", action, {"rule_id": "gov:hostile-tainted",
+                                  "hostile_sources": sorted(s for s in self._ingested_hostile if s)})
+            return GovernanceDecision(
+                allow=False, rule_id="gov:hostile-tainted",
+                reason="hostile turn: ingested content this turn was screened as a likely "
+                       "prompt-injection — non-operator consequential actions are blocked")
+
         # 5c. Tainted-turn guard (M2). In a turn that ingested UNTRUSTED content, an IRREVERSIBLE
         #     action that is NOT explicitly operator-attributed is denied — ingested content must
         #     not be able to drive an irreversible commit even after authority + scope clear. This
@@ -530,6 +553,20 @@ class GovernanceKernel:
         denied binding by PK's injection boundary (AURUM_ERR_008) at govern()."""
         event = self.sen.on_event({"source": source, "payload": payload, **fields})
         self._ingested_untrusted.add(event.get("source"))
+        # Screener escalation: a high-confidence / override verdict makes the turn HOT — recorded
+        # so the gate blocks ALL non-operator consequential actions, not just irreversible ones.
+        # NEVER relaxes anything: a benign/absent verdict leaves the base provenance taint intact.
+        verdict = event.get("screen")
+        if isinstance(verdict, dict) and (verdict.get("is_malicious_override")
+                or float(verdict.get("exploit_confidence") or 0.0) >= self._screen_threshold):
+            self._ingested_hostile.add(event.get("source"))
+            self._best_effort_log(
+                "ingest_screened_hostile",
+                {"action_id": "sen-ingest", "capability_class": "ingest"},
+                {"source": event.get("source"),
+                 "exploit_confidence": verdict.get("exploit_confidence"),
+                 "is_malicious_override": bool(verdict.get("is_malicious_override")),
+                 "signals": verdict.get("signals")})
         return event
 
     # -- shadow-contained irreversible execution (SH) -----------------------
