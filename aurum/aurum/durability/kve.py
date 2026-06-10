@@ -87,7 +87,11 @@ class KnowledgeValidityEngine:
             "last_verified,source_type,source_uri,observed_at,verified_at,status) "
             "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(artifact_id) DO UPDATE SET "
             "volatility_class=excluded.volatility_class, "
-            "base_confidence=excluded.base_confidence, last_verified=excluded.last_verified",
+            "base_confidence=excluded.base_confidence, last_verified=excluded.last_verified, "
+            # re-registering = the knowledge was freshly re-ingested → clear a prior 'invalid'
+            # status (else confidence() short-circuits to 0.0 FOREVER — the drift-recovery path,
+            # the whole point of KVE, would be permanently dead).
+            "status=excluded.status",
             (aid, self.classify(artifact), float(artifact.get("confidence", 1.0)),
              artifact.get("last_verified", now), artifact.get("source_type"),
              artifact.get("source_uri"), artifact.get("observed_at"),
