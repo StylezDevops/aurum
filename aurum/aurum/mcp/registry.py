@@ -41,6 +41,9 @@ _STATES = frozenset({REGISTERED, ENABLED, QUARANTINED, DEPRECATED})
 
 _TRANSPORTS = frozenset({"http", "stdio"})
 
+# Canonical mount-resident registry filename (under AURUM_STATE_ROOT / the per-group .hermes dir).
+MCP_REGISTRY_FILENAME = "mcp-servers.json"
+
 # Field names that would mean a RAW SECRET VALUE is being smuggled into the registry. Rejected
 # on register — secrets live only as a `secret_ref` (a name), resolved by OneCLI at request time.
 _FORBIDDEN_SECRET_FIELDS = frozenset({
@@ -204,3 +207,15 @@ class McpRegistry:
         sent on an LLM call (the idle-token-tax guard). This is what the container MCP layer
         consults at startup/turn to decide which servers to register + inject."""
         return [e for e in self.list(state=ENABLED) if group in e.get("enabled_groups", [])]
+
+
+def load_enabled_servers(state_root: str, group: str) -> List[Dict[str, Any]]:
+    """CONTAINER LOAD-FROM-MOUNT (Phase F): the startup projection a `--rm` container runs to
+    learn which MCP servers to register THIS turn. Reads the mount-resident registry at
+    `<state_root>/mcp-servers.json` and returns the ENABLED servers for `group` — the injection
+    plan (id / transport / url / secret_ref / per-tool classification). REGISTERED-but-not-enabled
+    servers are omitted (the idle-token-tax guard); a missing or corrupt registry yields [] (fail
+    closed: inject nothing, never crash a turn). Remote (http) servers need nothing installed —
+    only this URL+secret_ref, so they survive `--rm` by construction; OneCLI resolves the
+    secret_ref→value at request time so no secret ever lands in the container or `docker inspect`."""
+    return McpRegistry(os.path.join(state_root, MCP_REGISTRY_FILENAME)).tools_for_group(group)
