@@ -79,13 +79,18 @@ def _enabled() -> bool:
 
 
 def _home() -> str:
-    """Durable state root for governance (EL / authority / BB / OI). MUST be a mount that
-    outlives the --rm cage — a host bind dir, Azure Files/EFS share, or a k8s PVC; the
-    container sees only this path (mount-jailed) and writes the ledger here. One knob,
-    deployment picks the backing store: AURUM_STATE_ROOT overrides; else HERMES_HOME; else
-    ~/.hermes."""
-    return (os.environ.get("AURUM_STATE_ROOT")
-            or os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes"))
+    """Durable state root for governance (EL / authority / BB / OI) — the single resolver in
+    aurum.paths.state_root, shared with the host maintenance runner so the two can't diverge.
+    Falls back to the env chain directly if the organs package can't be imported."""
+    try:
+        try:
+            from aurum.paths import state_root
+        except ImportError:
+            from aurum.aurum.paths import state_root  # type: ignore[no-redef]
+        return state_root()
+    except Exception:
+        return (os.environ.get("AURUM_STATE_ROOT")
+                or os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes"))
 
 
 def _get_kernel():
@@ -93,10 +98,19 @@ def _get_kernel():
     global _kernel
     if _kernel is not None:
         return _kernel
+    built = False
     with _kernel_lock:
         if _kernel is None:
             GovernanceKernel, _, _, _, _ = _import_governance()
             _kernel = GovernanceKernel(home=_home(), injection_screener=_build_screener())
+            built = True
+    # Opportunistic cage maintenance runs OUTSIDE the construction lock (so a concurrent
+    # _get_kernel caller never blocks on a maintenance pass) and ONLY on the thread that built the
+    # kernel (so it fires at most once per process — one process == one message in the cage). Opt-in
+    # and best-effort — run_maintenance never raises. The long-lived HOST deployment uses
+    # scripts/governance_maintenance.py instead.
+    if built and os.environ.get("AURUM_MAINTENANCE_ON_TURN", "").lower() in {"1", "true", "yes", "on"}:
+        _kernel.run_maintenance()
     return _kernel
 
 
