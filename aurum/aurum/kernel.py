@@ -19,6 +19,19 @@ Fail-safe posture (tiered — the core safety contract, see aurum_organs_spec.md
   - normal deny/needs_gate → block that action, log, surface reason (system working).
 
 Owner absence / degraded mode shrinks the agent, never grows it.
+
+THE ENFORCED PROPERTY — stated precisely, so the claim matches the architecture: Aurum is
+POLICY ENFORCEMENT + AUDIT over BOUNDARY-LABELLED PROVENANCE. The labelling is enforced at the
+seams Aurum owns — every tool call is governed by the plugin's pre_tool_call hook, every
+successful INGEST-tier tool result is auto-ingested (kernel.ingest) at post_tool_call, and
+channel watchers ingest inbound content — so within those seams the labels are STRUCTURAL, not
+a convention an integrator can forget. Once labelled, the guards are mechanical: an untrusted
+justification hard-denies (AURUM_ERR_008), a tainted turn blocks un-attributed irreversible
+actions (M2), a screener hit escalates to hot taint. What Aurum does NOT claim: interpreter-
+level control-flow integrity (CaMeL-style capability tracking on VALUES). The model's latent
+motivation is never traced — untrusted text that reaches the model's context WITHOUT crossing
+an ingest seam carries the operator default. The property therefore scales with SEAM COVERAGE:
+a new channel or tool inherits it only by routing through the cage seams.
 """
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
