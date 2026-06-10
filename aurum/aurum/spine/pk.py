@@ -9,7 +9,9 @@ Key mechanisms implemented here:
     denied by check_chain.
   • UNTRUSTED-CONTENT BOUNDARY (AURUM_ERR_008): payload from AA/SEN/BB is tagged
     'untrusted' at the boundary; instructions therein cannot trigger actions, raise
-    authority, or satisfy a gate.
+    authority, or satisfy a gate. Scope, precisely: the deny is MECHANICAL once a source
+    is labelled; the labelling itself is enforced at the cage/plugin seams (boundary-
+    labelled provenance, NOT interpreter-level CFI — full statement in kernel.py).
   • REFUSAL PERSISTENCE / PADDING-RESISTANT (AURUM_ERR_009): denial signature is the
     data-flow taint path (source→sink pairs), not graph topology.  Adding benign
     padding steps does NOT break the match.
