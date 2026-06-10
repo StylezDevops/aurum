@@ -68,6 +68,16 @@ def test_tick_submits_due_schedule_tasks_to_rs_then_drain_runs_them():
     assert s.tick(now=1100.0) == ["m"]                           # 100s elapsed → due again
 
 
+def test_no_rs_runs_inline_and_drain_returns_results():
+    # FIX (review): with no RS, tick() runs SCHEDULE tasks inline; drain() must return those
+    # results (not [] — otherwise inline work runs but is reported as nothing).
+    s = _sched()                                          # rs=None
+    s.register("m", lambda: "done", triggers=[SCHEDULE], interval_seconds=100)
+    assert s.tick(now=1000.0) == ["m"]
+    out = s.drain()
+    assert len(out) == 1 and out[0]["result"] == "done"
+
+
 def test_operator_run_refuses_disabled_or_non_operator():
     s = _sched()
     s.register("ok", lambda: "ran", triggers=[OPERATOR])

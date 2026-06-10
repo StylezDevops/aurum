@@ -168,6 +168,9 @@ class GovernanceKernel:
         # container. `identity_bindings` binds a class to its resource scope; unbound → no access
         # (fail-safe: least privilege means no STANDING access until the operator binds one).
         self.identity = IdentityScopeMapper(bindings=identity_bindings)
+        # Lazily-built, CACHED maintenance scheduler (see run_maintenance) — cached so SCHEDULE
+        # interval gating holds across calls in a long-lived kernel. None until first use.
+        self._maintenance_scheduler: Any = None
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -680,6 +683,25 @@ class GovernanceKernel:
         added by the deployer via `sched.register(...)` with their chosen triggers."""
         from .observability.triggers import default_governance_scheduler
         return default_governance_scheduler(self, policy=policy)
+
+    def run_maintenance(self, now: Optional[float] = None,
+                        policy: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+        """Drive the maintenance scheduler ONCE: submit due SCHEDULE tasks to RS and run them
+        (tick + drain). The default scheduler is built on FIRST call and CACHED, so interval gating
+        holds across calls in a long-lived kernel (a host loop calls this on an interval; the cage
+        may call it opportunistically at message time). `policy` is applied when the scheduler is
+        first built AND re-applied on later calls (a reconfigure is never silently dropped).
+        Best-effort — never raises (maintenance must not crash a turn). Returns the drained task
+        results."""
+        try:
+            if self._maintenance_scheduler is None:
+                self._maintenance_scheduler = self.maintenance(policy=policy)
+            elif policy:
+                self._maintenance_scheduler.configure(policy)   # honour a later reconfigure too
+            self._maintenance_scheduler.tick(now)
+            return self._maintenance_scheduler.drain()
+        except Exception:
+            return []
 
     def scan_memory_integrity(self) -> Dict[str, Any]:
         """Between-turn memory-poisoning scan (the MPD half of the loop, the FC.evaluate sibling).
