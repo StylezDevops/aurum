@@ -60,21 +60,26 @@ def coerce_verdict(data: Any) -> ScreenVerdict:
 
 
 # -- offline heuristic screener (the always-on floor) -----------------------
-# Known instruction-OVERRIDE shapes (the agent's instructions being hijacked).
-_OVERRIDE = [
+# STRONG instruction-OVERRIDE shapes — unambiguous hijack attempts; ANY hit = malicious override.
+_OVERRIDE_STRONG = [
     (r"ignore\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier|preceding)"
      r"\s+(?:instructions?|prompts?|messages?|context)", "ignore_previous"),
     (r"disregard\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier|safety|rules)",
      "disregard_previous"),
     (r"forget\s+(?:everything|all|your|the)\b", "forget_all"),
-    (r"you\s+are\s+now\b", "you_are_now"),
-    (r"new\s+(?:instructions?|rules?|task)\s*[:.]", "new_instructions"),
     (r"(?:reveal|print|show|output|repeat)\s+(?:your|the)\s+(?:system\s+)?(?:prompt|instructions)",
      "reveal_system_prompt"),
     (r"override\s+(?:the\s+)?(?:system|safety|guardrails?|governance)", "override_safety"),
+]
+# WEAK shapes — suspicious but with genuine benign uses ("New task: master 24KJ161", "you are now
+# connected to ..."). They RAISE suspicion (a confidence bump) but do NOT alone force a
+# malicious-override HOT-taint that would block all consequential actions on benign content.
+_OVERRIDE_WEAK = [
+    (r"you\s+are\s+now\b", "you_are_now"),
+    (r"new\s+(?:instructions?|rules?|task)\s*[:.]", "new_instructions"),
     (r"act\s+as\s+(?:if\s+you\s+(?:are|were)|an?\s+unrestricted)", "act_as"),
 ]
-# Data-exfil / secret-leak instructions.
+# Data-exfil / secret-leak instructions — STRONG (a leak instruction has no benign inbound reason).
 _EXFIL = [
     (r"exfiltrat", "exfiltrate"),
     (r"(?:send|post|upload|forward|email|leak|transmit)\b.{0,40}?"
@@ -83,26 +88,32 @@ _EXFIL = [
      r"(?:secret|token|api[_\s-]?key|password|credential|private[_\s-]?key|\.env)", "leak_secret"),
     (r"(?:send|post|upload|exfiltrate)\b.{0,60}?https?://", "send_to_url"),
 ]
-_OVERRIDE_RE = [(re.compile(p, re.IGNORECASE | re.DOTALL), name) for p, name in _OVERRIDE]
-_EXFIL_RE = [(re.compile(p, re.IGNORECASE | re.DOTALL), name) for p, name in _EXFIL]
+_STRONG_RE = [(re.compile(p, re.IGNORECASE | re.DOTALL), name)
+              for p, name in _OVERRIDE_STRONG + _EXFIL]
+_WEAK_RE = [(re.compile(p, re.IGNORECASE | re.DOTALL), name) for p, name in _OVERRIDE_WEAK]
 
 
 class HeuristicInjectionScreener:
-    """Deterministic, offline, zero-dependency screener — the always-on floor. Pattern-matches
-    known instruction-override + data-exfil shapes. A hit on ANY pattern is treated as a malicious
-    override (these shapes have no benign reason to appear in inbound content); confidence rises
-    with the number of distinct signals. No model, no network — instant. The model-backed
-    GeminiFlashScreener is the upgrade for novel/obfuscated attempts, same interface."""
+    """Deterministic, offline, zero-dependency screener — the always-on floor. A STRONG override /
+    exfil shape (no benign inbound reason) is a malicious override at high confidence (drives the
+    kernel's HOT-taint). WEAK shapes (which have benign uses) only raise suspicion BELOW the
+    HOT-taint threshold and never alone set is_malicious_override — so a benign 'New task: …' inbound
+    message does not block the turn. The model-backed GeminiFlashScreener is the upgrade for
+    novel/obfuscated attempts, same interface."""
 
     def __call__(self, text: Any) -> ScreenVerdict:
         s = text if isinstance(text, str) else ("" if text is None else str(text))
-        signals = [name for rx, name in _OVERRIDE_RE if rx.search(s)]
-        signals += [name for rx, name in _EXFIL_RE if rx.search(s)]
-        if not signals:
+        strong = [name for rx, name in _STRONG_RE if rx.search(s)]
+        weak = [name for rx, name in _WEAK_RE if rx.search(s)]
+        if not strong and not weak:
             return abstain()
-        confidence = min(1.0, 0.85 + 0.05 * (len(signals) - 1))
-        return {"exploit_confidence": confidence, "is_malicious_override": True,
-                "signals": signals}
+        if strong:
+            confidence = min(1.0, 0.85 + 0.05 * (len(strong) + len(weak) - 1))
+            return {"exploit_confidence": confidence, "is_malicious_override": True,
+                    "signals": strong + weak}
+        # weak-only: suspicious, but kept BELOW the HOT-taint threshold and NOT an override.
+        return {"exploit_confidence": min(0.5, 0.3 + 0.1 * (len(weak) - 1)),
+                "is_malicious_override": False, "signals": weak}
 
 
 # -- model-backed screener (fast, independent — Gemini Flash) ---------------

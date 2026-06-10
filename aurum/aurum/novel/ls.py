@@ -219,6 +219,12 @@ class LivingSpecification:
         if rule["region"] == "core":
             self._audit("PROPOSAL", rule_id, "rejected_core_unproposable")
             return {"rejected": True, "reason": "core_unproposable", "region": "core"}
+        # A PROTECTED rule (rare-but-critical guardrail) is shielded from retire/reweight the same
+        # way CORE is — `protected` must MEAN protected, not merely 'never auto-flagged weak on
+        # disuse'. To retire one, an operator unprotects it first (a separate explicit step).
+        if rule.get("protected"):
+            self._audit("PROPOSAL", rule_id, "rejected_protected")
+            return {"rejected": True, "reason": "protected_rule", "protected": True}
         # a proposal that's really a preference routes to PM, not the constitution
         if as_preference:
             if self._pm is not None:
@@ -248,6 +254,10 @@ class LivingSpecification:
             raise ValueError("entropy limit: complexity increase without matched benefit")
         if approved_by is None:
             raise PermissionError("LS.apply_revision is HUMAN_GATE (approved_by required)")
+        # A reweight with no new_weight mutates nothing — reject it rather than report applied=True
+        # (and waste a version snapshot + a misleading 'applied_reweight' audit).
+        if revision["diff"].get("op") == "reweight" and revision["diff"].get("new_weight") is None:
+            raise ValueError("LS.apply_revision: a reweight requires a new_weight (no-op rejected)")
         version = self._save_version()  # snapshot PRE-mutation state for rollback
         diff = revision["diff"]
         if diff["op"] == "retire":

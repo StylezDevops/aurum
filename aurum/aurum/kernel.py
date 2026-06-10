@@ -627,7 +627,17 @@ class GovernanceKernel:
                                    "reason": scoped.get("reason")})
             return {"allowed": False, "stage": "substrate", "reason": scoped.get("reason")}
         skill = proposal.get("skill") if isinstance(proposal, dict) else None
-        if skill and golden_runner is not None:
+        if skill:
+            # A skill change MUST clear the transitive-dependents regression. If no golden_runner
+            # is available we CANNOT verify dependents — fail CLOSED (was fail-open: a skill
+            # proposal with no runner previously fell through to 'cleared' with no regression run).
+            if golden_runner is None:
+                self._best_effort_log("self_improvement_blocked", {"action_id": "self-improve"},
+                                      {"stage": "regression", "skill": skill,
+                                       "reason": "no golden_runner — dependents could not be verified"})
+                return {"allowed": False, "stage": "regression", "skill": skill,
+                        "reason": "no golden_runner provided; transitive-dependent regression "
+                                  "could not run (fail-closed)"}
             affected = self.sdg.affected(skill)
             results = self.sdg.regress(affected, runner=golden_runner)
             if not self.sdg.promotion_allowed(results):
@@ -807,6 +817,11 @@ class GovernanceKernel:
                 # reflex demote — proxy is sufficient to contract (safe direction)
                 self.ag.apply_outcome(cc, good=False, grounded=False, environment=env,
                                       severity=severity, cause=cause)
+                # TL demote-fast: tier-down is immediate on ANY negative signal, proxy OR grounded
+                # (TL's contract). The grounded path already feeds TL; the proxy-failure path did
+                # not — so a capability that keeps failing at runtime kept its earned scope until a
+                # human verdict. Wire the proxy-negative demote here too.
+                self.tl.ingest({"capability": cc, "outcome": "failure", "grounded": False})
                 # Bank a BB lesson for a hard failure (OI's completed-unsatisfied hook misses
                 # not-completed) AND for EVERY governance breach — a "must never" that happened
                 # is the most important thing to remember, even though it "succeeded" by proxy.
