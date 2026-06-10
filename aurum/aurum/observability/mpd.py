@@ -15,8 +15,15 @@ spec build order requires this from the first task so AG/EG have history to tune
 This is a read-only telemetry read pulled forward alongside scan/explain — still no
 authority, no state, never blocks.
 
-Findings are RETURNED, not written: feeding them back into evidence_confidence requires
-downstream consumers (and EL is append-only), so that loop is deferred until OI/BB exist.
+Findings feed back via TWO consumers now that OI/BB exist (the loop the early note deferred):
+the kernel's between-turn scan surfaces suspects to BB for OWNER REVIEW (never auto-deletes), and
+`quarantined_evidence()` (the success-then-contradiction subset — a recorded success a later
+outcome on the same object contradicts) drives `effective_confidence()`, a READ-TIME overlay (EL
+is append-only, so a poisoned row's stored confidence cannot be mutated) that the kernel's
+verify-gated rehydration honours — a contradicted grounded 'success' does NOT silently rebuild
+authority/scope on --rm. The uniform-confidence signature stays OWNER-REVIEW only (scan()): a
+single trusted source can legitimately emit a run of identical confidence (the spine's own
+decisions are all 1.0), so it is never an automatic evidence discount.
 """
 from __future__ import annotations
 
@@ -49,13 +56,18 @@ class MemoryPoisoningDetector:
     def _is_success(ev: Dict[str, Any]) -> bool:
         p = ev["payload"]
         return (ev["action_type"] in ("PROMOTION", "PROMOTE")
-                or p.get("outcome") == "success" or p.get("success") is True)
+                or p.get("outcome") == "success" or p.get("success") is True
+                # the grounded-outcome TRUST stream (kernel GOVERNANCE_DECISION): a satisfied
+                # verdict is a recorded success — the exact memory that builds AG/TL/familiarity.
+                or (p.get("outcome") == "outcome_verdict" and p.get("satisfied") is True))
 
     @staticmethod
     def _is_contradiction(ev: Dict[str, Any]) -> bool:
         p = ev["payload"]
         return (ev["action_type"] == "EXCEPTION"
-                or p.get("outcome") in _FAILURE_OUTCOMES or p.get("success") is False)
+                or p.get("outcome") in _FAILURE_OUTCOMES or p.get("success") is False
+                # a later verdict on the SAME object that flips to unsatisfied contradicts it.
+                or (p.get("outcome") == "outcome_verdict" and p.get("satisfied") is False))
 
     # -- signatures ---------------------------------------------------------
     def _success_contradictions(self, events: List[Dict[str, Any]]
@@ -119,6 +131,28 @@ class MemoryPoisoningDetector:
             return {"signature": "suspiciously_uniform_confidence_cluster",
                     "contradicting_events": uc[evidence_id]}
         return {"signature": None, "contradicting_events": []}
+
+    # -- auto-actionable quarantine + read-time evidence overlay ------------
+    def quarantined_evidence(self) -> set:
+        """Event ids in the SUCCESS-THEN-CONTRADICTION signature ONLY — the subset safe to act on
+        automatically. A recorded success that a later outcome on the same object contradicts is
+        unambiguously an unreliable 'lesson', whatever its source. The uniform-confidence cluster
+        is DELIBERATELY EXCLUDED: a single legitimate source can emit a run of identical confidence
+        (the spine's own decisions are all 1.0), so that signature is OWNER-REVIEW only (scan()),
+        never an automatic discount. Returns a set of suspect event_ids."""
+        return set(self._success_contradictions(self._events()))
+
+    def effective_confidence(self, event: Dict[str, Any], *, discount: float = 0.0,
+                             quarantined: Optional[set] = None) -> float:
+        """Read-time evidence-confidence OVERLAY — how a finding feeds back when EL is append-only
+        (a poisoned row's stored confidence cannot be mutated in place). Returns the event's stored
+        `evidence_confidence`, REPLACED by `discount` (default 0.0 = fully distrusted) when the
+        event is in the auto-quarantine set. Pass a precomputed `quarantined` set to apply the
+        overlay across many events without re-scanning the ledger each call."""
+        q = quarantined if quarantined is not None else self.quarantined_evidence()
+        if event.get("event_id") in q:
+            return float(discount)
+        return float(event.get("evidence_confidence") or 0.0)
 
     def governance_event_rate(self, window_seconds: Optional[float] = None,
                               now: Optional[datetime] = None) -> Dict[str, Any]:
