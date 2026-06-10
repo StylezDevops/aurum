@@ -662,6 +662,25 @@ class GovernanceKernel:
         signal CC feeds to MGC (do-not-retire) and TCM (harden-or-split). Read-only; never blocks."""
         return self.cc.systemic_risks()
 
+    def oi_calibration(self) -> Dict[str, Any]:
+        """OI proxy-vs-human calibration snapshot (a maintenance task): how well the cheap proxy
+        verdicts agree with sampled owner ground-truth + the resulting proxy weight (a divergent
+        proxy is down-weighted). Read-only; never blocks; best-effort."""
+        try:
+            return dict(self.oi.proxy_calibration())
+        except Exception:
+            return {}
+
+    def maintenance(self, policy: Optional[Dict[str, Dict[str, Any]]] = None) -> Any:
+        """Build the configurable governance trigger layer over this kernel (GOOD secure defaults;
+        pass `policy` to override per-task enabled/triggers/interval). The DEPLOYER drives it:
+        `on_turn()` at a turn boundary, `tick(now)` on a schedule (feeds RS), `operator_run(name)`
+        on a command, `dispatch_event(ev)` on an event — and `drain()` runs the RS-queued work.
+        Organ-level tasks the kernel doesn't hold (LS.governance_gaps, FC.evaluate, CS-EQ scans) are
+        added by the deployer via `sched.register(...)` with their chosen triggers."""
+        from .observability.triggers import default_governance_scheduler
+        return default_governance_scheduler(self, policy=policy)
+
     def scan_memory_integrity(self) -> Dict[str, Any]:
         """Between-turn memory-poisoning scan (the MPD half of the loop, the FC.evaluate sibling).
         Surfaces the AUTO-QUARANTINE subset (a grounded success a later outcome contradicts) to BB
