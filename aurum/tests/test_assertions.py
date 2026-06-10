@@ -310,8 +310,11 @@ def test_AURUM_ERR_011_el_fail_safe():
         el.append(event)
         action_executed["value"] = True
 
-    # Force append to fail by breaking the underlying store.
-    el._db.close()  # any subsequent append raises -> fail-safe must block the act
+    # Force append to fail by breaking the underlying store. append() writes through the
+    # dedicated chain connection (serialized tip-read, AURUM_ERR_031), so close BOTH handles —
+    # the gate models "the store is broken", not "one of two handles is broken".
+    el._db.close()
+    el._chain.close()  # any subsequent append raises -> fail-safe must block the act
 
     ev = {"event_id": "", "timestamp": "", "source_organ": "TS",
           "action_type": "PROMOTION", "object_ids": ["tool_b"],
