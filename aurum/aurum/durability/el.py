@@ -232,17 +232,36 @@ class EvidenceLedger:
         self._db.execute("PRAGMA journal_mode=WAL;")    # concurrent readers
         self._db.execute("PRAGMA synchronous=FULL;")    # fsync before ack
         self._db.execute("PRAGMA foreign_keys=ON;")
+        self._db.execute("PRAGMA busy_timeout=10000;")  # wait on a concurrent writer, don't error
         self._db.executescript(_SCHEMA)
+        # DEDICATED chain-append connection (AURUM_ERR_031): append's tip-read -> insert runs in a
+        # BEGIN IMMEDIATE transaction on THIS connection, so (a) no other statement from this
+        # process can join the transaction (all other reads/writes use self._db), and (b) writers
+        # in OTHER processes sharing the mounted el.db (the host maintenance loop + a per-message
+        # cage kernel) serialize on SQLite's write lock. ":memory:" cannot be opened twice (a
+        # second connect is a different empty db), so in-memory test ledgers reuse the main
+        # connection — they are single-threaded by construction.
+        if path == ":memory:":
+            self._chain = self._db
+        else:
+            self._chain = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+            self._chain.execute("PRAGMA synchronous=FULL;")
+            self._chain.execute("PRAGMA busy_timeout=10000;")
+        self._append_lock = threading.Lock()  # serializes in-process appends (no shared-tip fork)
         self._metrics = _AppendMetrics()   # append latency + in-flight depth telemetry
 
     def append(self, event: ELEvent) -> None:
         """Durable, hash-chained append. FAIL-SAFE: raises on any failure so the
         caller's action does not proceed (write-then-act).
 
-        Direct (synchronous) path. Concurrent callers should go through
-        SerializedLedgerWriter (durability/el_writer.py), which funnels all appends through one
-        writer so the chain cannot fork (AURUM_ERR_031); this method computes the same
-        split-hash inline and is kept for single-threaded callers and existing tests."""
+        SERIALIZED (AURUM_ERR_031): the tip-read -> chain-link -> INSERT step runs under a
+        per-instance lock AND a BEGIN IMMEDIATE transaction on the dedicated chain connection,
+        so two appends can never read the same tip and fork the chain — whether from threads in
+        this process (the lock) or from OTHER processes on the same mounted el.db (the
+        transaction's write lock; the host maintenance loop and a per-message cage kernel share
+        the file, which an in-process queue cannot serialize). Redaction + canonicalization (the
+        CPU work) stay OUTSIDE the critical section. SerializedLedgerWriter remains the optional
+        in-process throughput/backpressure layer; chain correctness no longer depends on it."""
         raw = dict(event)
         # Build the CANONICAL event — EXACTLY the fields + types that storage persists and
         # verify_chain reconstructs — BEFORE hashing, so the block hash is computed over the same
@@ -259,10 +278,21 @@ class EvidenceLedger:
             "payload": self._redact(raw.get("payload", {})),
             "evidence_confidence": float(raw.get("evidence_confidence", 0.0)),
             "evidence_source": raw["evidence_source"],
-            "prev_hash": self._tip_hash(),
+            "prev_hash": "",  # assigned under the lock — a serialized tip read (no fork)
         }
-        ev["hash"] = calculate_block_hash(ev)
-        self._insert(ev)
+        with self._append_lock:
+            self._chain.execute("BEGIN IMMEDIATE")
+            try:
+                ev["prev_hash"] = self._tip_hash(self._chain)
+                ev["hash"] = calculate_block_hash(ev)
+                self._insert(ev, self._chain)
+                self._chain.execute("COMMIT")
+            except BaseException:
+                try:
+                    self._chain.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
 
     def redact(self, payload: Any) -> Any:
         """Apply the single (PK-owned) redaction policy. Exposed so SerializedLedgerWriter
@@ -279,15 +309,20 @@ class EvidenceLedger:
         already redacted. The single PHYSICAL writer used by SerializedLedgerWriter: the serial
         chain-link is assigned by that one writer under no tip contention (AURUM_ERR_031), so
         this method must not re-read the tip or recompute the hash. FAIL-SAFE: raises on any
-        DB error so the caller's action does not proceed."""
+        DB error so the caller's action does not proceed. NOTE: the writer's tip-read is NOT
+        transactional — its no-fork guarantee is its sole-writer contract, so a deployment must
+        not mix a SerializedLedgerWriter with concurrent direct append() calls on one file."""
         self._insert(event)
 
-    def _insert(self, ev: ELEvent) -> None:
+    def _insert(self, ev: ELEvent, db: Any = None) -> None:
         """Shared physical INSERT for append (inline-hashed) and append_raw (writer-hashed).
-        Timed + depth-gauged for telemetry; the gauge always closes (finally) even on failure."""
+        Timed + depth-gauged for telemetry; the gauge always closes (finally) even on failure.
+        `db` selects the connection: append passes the dedicated chain connection (its INSERT
+        must join the BEGIN IMMEDIATE transaction); append_raw uses the default."""
+        db = db if db is not None else self._db
         t0 = self._metrics.begin()
         try:
-            cur = self._db.execute(
+            cur = db.execute(
                 "INSERT INTO evidence_ledger "
                 "(event_id,timestamp,source_organ,action_type,object_ids,payload,"
                 " evidence_confidence,evidence_source,prev_hash,hash) "
@@ -301,7 +336,7 @@ class EvidenceLedger:
             )
             seq = cur.lastrowid
             for oid in ev.get("object_ids", []):
-                self._db.execute(
+                db.execute(
                     "INSERT OR IGNORE INTO el_object_index(object_id,seq) VALUES (?,?)",
                     (oid, seq),
                 )
@@ -315,8 +350,8 @@ class EvidenceLedger:
         the live decision path's first-order SLO surfaced for the telemetry view."""
         return self._metrics.snapshot()
 
-    def _tip_hash(self) -> str:
-        row = self._db.execute(
+    def _tip_hash(self, db: Any = None) -> str:
+        row = (db if db is not None else self._db).execute(
             "SELECT hash FROM evidence_ledger ORDER BY seq DESC LIMIT 1"
         ).fetchone()
         return row[0] if row else GENESIS_HASH
