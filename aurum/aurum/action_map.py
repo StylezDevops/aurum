@@ -27,6 +27,11 @@ Provenance posture (per-call, M2):
   - the tool tables below are a STARTER mapping; unknown tools default to SAFE_READ-safe
     only if they are demonstrably read-like, else CONSEQUENTIAL (fail-safe: unknown ⇒ treat
     as having side effects).
+  - PROPERTY CLASS (positioning, precise): this is BOUNDARY-LABELLED provenance — structural
+    at the seams Aurum owns (plugin pre/post hooks, channel watchers), mechanical once
+    labelled — NOT interpreter-level control-flow integrity (no CaMeL-style value tracking).
+    A new tool/channel inherits the property only by routing through those seams. Full
+    statement: kernel.py module docstring.
 """
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
