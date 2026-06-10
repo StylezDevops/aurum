@@ -243,13 +243,24 @@ class EvidenceLedger:
         SerializedLedgerWriter (durability/el_writer.py), which funnels all appends through one
         writer so the chain cannot fork (AURUM_ERR_031); this method computes the same
         split-hash inline and is kept for single-threaded callers and existing tests."""
-        ev = dict(event)
-        ev["payload"] = self._redact(ev.get("payload", {}))
-        if not ev.get("event_id"):
-            ev["event_id"] = uuid.uuid4().hex
-        if not ev.get("timestamp"):
-            ev["timestamp"] = _utc_now_iso()
-        ev["prev_hash"] = self._tip_hash()
+        raw = dict(event)
+        # Build the CANONICAL event — EXACTLY the fields + types that storage persists and
+        # verify_chain reconstructs — BEFORE hashing, so the block hash is computed over the same
+        # bytes verify will recompute. Hashing the raw caller dict instead let an int
+        # evidence_confidence (stored/reconstructed as REAL float) or an omitted/extra key diverge
+        # the hash, making verify_chain reject a CLEAN ledger → the kernel rehydrates nothing and
+        # silently loses all earned authority/familiarity/TL on every --rm.
+        ev: ELEvent = {
+            "event_id": raw.get("event_id") or uuid.uuid4().hex,
+            "timestamp": raw.get("timestamp") or _utc_now_iso(),
+            "source_organ": raw["source_organ"],
+            "action_type": raw["action_type"],
+            "object_ids": list(raw.get("object_ids") or []),
+            "payload": self._redact(raw.get("payload", {})),
+            "evidence_confidence": float(raw.get("evidence_confidence", 0.0)),
+            "evidence_source": raw["evidence_source"],
+            "prev_hash": self._tip_hash(),
+        }
         ev["hash"] = calculate_block_hash(ev)
         self._insert(ev)
 
