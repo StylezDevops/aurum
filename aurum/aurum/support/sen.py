@@ -9,7 +9,7 @@ channel carries operator trust, and SEN never mints it.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from ..base import unbuilt  # noqa: F401 — kept so a future method can mark itself unbuilt
 
@@ -25,8 +25,13 @@ class Sensorium:
 
     ORGAN = "SEN"
 
-    def __init__(self) -> None:
+    def __init__(self, screener: Optional[Callable[[str], Dict[str, Any]]] = None) -> None:
         self._watchers: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
+        # Optional injection SCREENER: a Callable[text -> verdict dict]. Run on every ingested
+        # event, it attaches `ev["screen"]` = {exploit_confidence, is_malicious_override, signals}.
+        # A SENSOR only — it never rewrites the payload (provenance stays untrusted) and its failure
+        # is isolated (no verdict → the base structural taint still applies). See injection_screen.
+        self._screener = screener
 
     def watch(self, source: str, handler: Callable[[Dict[str, Any]], None]) -> None:
         """Register `handler` for events from `source` (a watcher id like 'gmail-2fa',
@@ -51,6 +56,13 @@ class Sensorium:
         ev["trust"] = UNTRUSTED                       # SEN content is ALWAYS untrusted
         ev["justification_sources"] = [source]        # never 'operator' → PK denies binding (008)
         errors: List[str] = []
+        # Screen the inbound content (sensor): attach a verdict, NEVER rewrite the payload. A
+        # screener failure is isolated — no verdict means the base provenance taint still applies.
+        if self._screener is not None:
+            try:
+                ev["screen"] = dict(self._screener(self._screen_text(ev)))
+            except Exception as e:  # noqa: BLE001 — a flaky screener must not crash ingestion
+                errors.append(f"screener {type(e).__name__}: {e}")
         dispatched = 0
         for handler in self._watchers.get(source, []):
             try:
@@ -62,3 +74,16 @@ class Sensorium:
         if errors:
             ev["errors"] = errors
         return ev
+
+    @staticmethod
+    def _screen_text(ev: Dict[str, Any]) -> str:
+        """The inbound text to screen, pulled from the event payload (str, or a text-bearing key
+        of a dict, else its repr). Screening reads content; it never mutates it."""
+        p = ev.get("payload")
+        if isinstance(p, str):
+            return p
+        if isinstance(p, dict):
+            for k in ("text", "body", "content", "message"):
+                if isinstance(p.get(k), str):
+                    return p[k]
+        return "" if p is None else str(p)
