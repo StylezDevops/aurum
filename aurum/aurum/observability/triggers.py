@@ -233,3 +233,30 @@ def default_governance_scheduler(kernel: Any, *, policy: Optional[Dict[str, Dict
     if policy:
         sched.configure(policy)
     return sched
+
+
+def run_maintenance_loop(run_once: Callable[[float], Any], *, interval_seconds: float,
+                         now_fn: Optional[Callable[[], float]] = None,
+                         sleep_fn: Optional[Callable[[float], None]] = None,
+                         should_continue: Optional[Callable[[], bool]] = None,
+                         max_iterations: Optional[int] = None) -> int:
+    """Drive `run_once(now)` every `interval_seconds` — the LONG-LIVED HOST driver for SCHEDULE
+    work (the ephemeral cage runs maintenance opportunistically at message time instead). Every
+    knob is injectable so the loop is fully testable WITHOUT real waiting: `now_fn` (default
+    time.time), `sleep_fn` (default time.sleep), `should_continue` (default forever — pass a flag
+    to stop), `max_iterations` (default unbounded). Each iteration is FAIL-SAFE: an exception in
+    `run_once` is swallowed so the loop survives a transient fault. Returns the iteration count;
+    it does not sleep after the final iteration."""
+    now = now_fn or time.time
+    sleep = sleep_fn or time.sleep
+    keep_going = should_continue or (lambda: True)
+    n = 0
+    while keep_going() and (max_iterations is None or n < max_iterations):
+        try:
+            run_once(now())
+        except Exception:  # noqa: BLE001 — a transient maintenance fault must not kill the loop
+            pass
+        n += 1
+        if keep_going() and (max_iterations is None or n < max_iterations):
+            sleep(interval_seconds)
+    return n

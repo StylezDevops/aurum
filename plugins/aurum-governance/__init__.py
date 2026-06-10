@@ -97,6 +97,12 @@ def _get_kernel():
         if _kernel is None:
             GovernanceKernel, _, _, _, _ = _import_governance()
             _kernel = GovernanceKernel(home=_home(), injection_screener=_build_screener())
+            # Opportunistic cage maintenance: one process == one message, so this runs due
+            # SCHEDULE work (MPD scan / CC / OI calibration) at most once per message. Opt-in
+            # (latency-bearing) and best-effort — run_maintenance never raises. The long-lived
+            # HOST deployment uses scripts/governance_maintenance.py instead.
+            if os.environ.get("AURUM_MAINTENANCE_ON_TURN", "").lower() in {"1", "true", "yes", "on"}:
+                _kernel.run_maintenance()
     return _kernel
 
 
