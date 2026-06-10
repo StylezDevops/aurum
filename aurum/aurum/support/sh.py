@@ -56,7 +56,10 @@ class ShadowMode:
             return {"committed": False, "reason": f"simulate verdict={rec['verdict']!r}"}
         apply = action.get("apply") if isinstance(action, dict) else None
         state = action.get("state") if isinstance(action, dict) else None
+        # CONSUME the verdict BEFORE the real side effect. If apply() RAISES after partially firing
+        # an irreversible effect, the exception must not leave a replayable 'ok' that a retry could
+        # re-commit (double-firing the irreversible op) — no-replay must hold in exactly that case.
+        del self._verdicts[aid]
         if callable(apply):
             apply(state)                       # real side effect, only after an OK simulation
-        del self._verdicts[aid]                # consume the verdict — no replay
         return {"committed": True, "state": state, "diff": rec}

@@ -64,9 +64,10 @@ class TrustLadder:
         """Manual override to cross a high-risk ceiling — HUMAN_GATE (`approved_by` required). Sets
         the tier to `evidence['tier']` (or ceiling+1), capped at max_tier. The ONLY way past the
         auto ceiling; capability growth like this is exactly what pauses on owner absence / freeze."""
-        if approved_by is None:
+        if not approved_by or not str(approved_by).strip():
             raise PermissionError(
-                "TL.grant is HUMAN_GATE: crossing a high-risk ceiling requires approved_by")
+                "TL.grant is HUMAN_GATE: crossing a high-risk ceiling requires a non-blank "
+                "approved_by (an empty/whitespace approver does not satisfy the gate)")
         cap = str(capability)
         if isinstance(evidence, dict) and isinstance(evidence.get("tier"), int):
             target = evidence["tier"]

@@ -74,6 +74,11 @@ class BlackBox:
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
+    # Map a BB action to the EL action_type so the canonical ledger isn't mislabeled: a postmortem
+    # WRITE is a failure record (EXCEPTION); a verify QUARANTINE is a tamper-containment event. Both
+    # were previously logged as PROMOTION, which mis-files security events for any action_type query.
+    _EL_ACTION_TYPE = {"write": "EXCEPTION", "verify_quarantine": "QUARANTINE"}
+
     def _log_el(self, action: str, pm_id: str, detail: Dict[str, Any]) -> None:
         if self._el is None:
             return
@@ -81,7 +86,7 @@ class BlackBox:
             "event_id": str(uuid.uuid4()),
             "timestamp": self._now(),
             "source_organ": "BB",
-            "action_type": "PROMOTION",
+            "action_type": self._EL_ACTION_TYPE.get(action, "EXCEPTION"),
             "object_ids": [pm_id],
             "payload": {"action": action, **detail},
             "evidence_confidence": 1.0,
