@@ -291,10 +291,19 @@ class PolicyKernel:
         return "operator" if source == "operator" else "untrusted"
 
     def trace_justification(self, action: Any) -> List[str]:
-        """Return the source identifiers an action's justification traces to."""
+        """Return the source identifiers an action's justification traces to. Type-robust: a bare
+        STRING is ONE source (not its characters — `list("operator")` would otherwise iterate
+        'o','p',… and spuriously deny); a list/tuple is normalised to strings; any OTHER type is
+        malformed provenance → a single untrusted token so the injection boundary fails CLOSED
+        rather than treating an unparseable field as trusted."""
         if not isinstance(action, dict):
             return []
-        return list(action.get("justification_sources", []))
+        js = action.get("justification_sources", [])
+        if isinstance(js, str):
+            return [js]
+        if isinstance(js, (list, tuple)):
+            return [str(s) for s in js]
+        return ["pk:malformed-justification"]
 
     # -- refusal persistence ------------------------------------------------
 
@@ -328,13 +337,21 @@ class PolicyKernel:
         )
         return gate_id
 
-    def approve_gate(self, gate_id: str, approved_by: str) -> None:
-        """Record a human approval for a pending gate."""
+    def approve_gate(self, gate_id: str, approved_by: str, now: Optional[float] = None) -> None:
+        """Record a human approval for a pending gate. FAIL-CLOSED on TTL: an expired gate cannot
+        be approved — even if check_gate was never called to flip `denied` (it is the only other
+        place that does). Without this, a gate whose TTL lapsed but was never checked stays
+        denied=False, is hidden from open_gates, yet approve_gate would accept it and check_gate
+        would then return 'approved' — reviving a stale gate (AURUM_ERR_012 hole)."""
         item = self._gates.get(gate_id)
         if item is None:
             raise KeyError(f"PK: no gate {gate_id!r}")
         if item["denied"]:
             raise PermissionError(f"PK: gate {gate_id!r} already expired to denied")
+        t = now if now is not None else time.time()
+        if t >= item["created_at"] + item["ttl_seconds"]:
+            item["denied"] = True
+            raise PermissionError(f"PK: gate {gate_id!r} TTL expired; cannot approve (AURUM_ERR_012)")
         item["approved_by"] = approved_by
 
     def check_gate(self, gate_id: str, now: Optional[float] = None) -> str:
