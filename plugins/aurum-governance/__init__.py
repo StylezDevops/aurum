@@ -39,13 +39,13 @@ def _import_governance():
     """
     try:
         from aurum.kernel import GovernanceKernel
-        from aurum.action_map import SAFE_READ, risk_tier, to_action
+        from aurum.action_map import INGEST, SAFE_READ, risk_tier, to_action
     except ImportError:
         from aurum.aurum.kernel import GovernanceKernel  # type: ignore[no-redef]
         from aurum.aurum.action_map import (  # type: ignore[no-redef]
-            SAFE_READ, risk_tier, to_action,
+            INGEST, SAFE_READ, risk_tier, to_action,
         )
-    return GovernanceKernel, to_action, risk_tier, SAFE_READ
+    return GovernanceKernel, to_action, risk_tier, SAFE_READ, INGEST
 
 
 def _enabled() -> bool:
@@ -71,7 +71,7 @@ def _get_kernel():
         return _kernel
     with _kernel_lock:
         if _kernel is None:
-            GovernanceKernel, _, _, _ = _import_governance()
+            GovernanceKernel, _, _, _, _ = _import_governance()
             _kernel = GovernanceKernel(home=_home())
     return _kernel
 
@@ -91,7 +91,12 @@ def _on_pre_tool_call(
     try:
         if not _enabled():
             return None
-        _, to_action, _, _ = _import_governance()
+        _, to_action, _, _, _ = _import_governance()
+        # A MODEL-driven tool call is built WITHOUT operator_origin on purpose: the model chose it,
+        # so it is not operator-attributed and is subject to the kernel's tainted-turn guard (an
+        # irreversible action after untrusted content was ingested THIS turn is blocked — M2). We
+        # cannot read the model's true driver (operator vs the page it just read) from the call
+        # alone, so the conservative posture is fail-closed on irreversible-in-a-tainted-turn.
         action = to_action(tool_name, args if isinstance(args, dict) else {})
         decision = _get_kernel().govern(action)
         if decision.allow:
@@ -127,18 +132,31 @@ def _on_post_tool_call(
     if not _enabled():
         return
     try:
-        _, to_action, risk_tier, SAFE_READ = _import_governance()
-        if risk_tier(tool_name) == SAFE_READ:
+        _, to_action, risk_tier, SAFE_READ, INGEST = _import_governance()
+        tier = risk_tier(tool_name)
+        if tier == SAFE_READ:
             return  # side-effect-free reads don't move authority
-        action = to_action(tool_name, args if isinstance(args, dict) else {})
         errored = status in {"error", "failed"} or _looks_like_error(result)
+        kernel = _get_kernel()
+        # M2 per-call provenance: a SUCCESSFUL INGEST-tier tool (web/browser/fetch) just pulled
+        # UNTRUSTED external content into context. Record it so the kernel's tainted-turn guard
+        # evaluates SUBSEQUENT calls this turn per-call — an irreversible action driven AFTER an
+        # injection is blocked unless operator-attributed. A FAILED fetch ingested nothing → no
+        # taint. (One process per message = one turn in the cage, so taint resets per message;
+        # a long-lived host kernel would call kernel.new_turn() at the turn boundary.)
+        if tier == INGEST and not errored:
+            try:
+                kernel.ingest(source=f"tool:{tool_name}", payload={"tool": tool_name})
+            except Exception:
+                pass
+        action = to_action(tool_name, args if isinstance(args, dict) else {})
         task_result = {
             "completed": not errored,
             "proxy_satisfied": not errored,
             "quality": 0.3 if errored else 1.0,
             "error": _result_text(result) if errored else None,
         }
-        _get_kernel().observe_outcome(action, task_result)
+        kernel.observe_outcome(action, task_result)
     except Exception as exc:
         logger.debug("aurum-governance post_tool_call note skipped: %s", exc)
 
