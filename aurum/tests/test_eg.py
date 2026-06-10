@@ -74,6 +74,30 @@ def test_freeze_and_branch_forks_from_last_good_step():
     assert rows and "components" in rows[0]["payload"]
 
 
+def test_scoring_is_deterministic_and_idempotent_for_sparse_signals():
+    # The bug: score_step mutated the shared EWMA, so re-scoring (freeze_and_branch / should_branch /
+    # audit) double-folded the sparse signals → U drifted and the fork point was non-deterministic.
+    # The instantaneous-signal test above never exercised the EWMA path. This does.
+    eg = EpistemicGovernor(threshold=0.5, ewma_alpha=0.4)
+    traj = {"id": "t", "steps": [
+        _step(tool_failure_rate=0.0),   # calm (idx 0 — lowest U)
+        _step(tool_failure_rate=0.2),
+        _step(tool_failure_rate=0.6),
+        _step(tool_failure_rate=1.0)]}  # tip (distinct values so context-location is unambiguous)
+
+    u_tip_1 = eg.score_step(traj["steps"][-1], traj)["U"]
+    eg.should_branch(traj)                       # intervening scoring calls (would corrupt EWMA)
+    eg.freeze_and_branch(traj)
+    u_tip_2 = eg.score_step(traj["steps"][-1], traj)["U"]
+    assert u_tip_1 == u_tip_2                     # idempotent: scoring did not drift the state
+
+    fb1 = eg.freeze_and_branch(traj)
+    fb2 = eg.freeze_and_branch(traj)
+    assert fb1 == fb2                             # deterministic fork point across repeated calls
+    alt = next(b for b in fb1 if b["kind"] == "alternate")
+    assert alt["from_step"] == 0                  # the calm (lowest-U) step, correctly chosen
+
+
 def test_select_avoids_poisoned_branch():
     eg = EpistemicGovernor()
     chosen = eg.select([{"kind": "continue", "U": 0.8},
