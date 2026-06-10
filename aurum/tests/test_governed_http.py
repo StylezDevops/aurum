@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 
 from aurum.build_state import is_built
+from aurum.durability.clock import DomainClock
 from aurum.integrations import GovernedHttpClient, resolve_secret
 from aurum.kernel import GovernanceKernel
 from aurum.mcp import McpRegistry
@@ -35,7 +36,8 @@ class _FakeTransport:
 
 
 def _client(tmp_path, **kw):
-    k = GovernanceKernel(home=str(tmp_path))
+    # Injectable DomainClock so a test can SPACE grounded outcomes past the band promotion dwell.
+    k = GovernanceKernel(home=str(tmp_path), domain_clock=DomainClock(1_000_000.0))
     ft = _FakeTransport()
     reg = McpRegistry(str(tmp_path / "mcp-servers.json"))
     c = GovernedHttpClient(k, server_id="demo-api", base_url="http://127.0.0.1:8080",
@@ -69,6 +71,7 @@ def test_irreversible_sends_only_after_full_authority(tmp_path):
     for i in range(40):                       # grounded outcomes promote toward the full band
         if k.ag.band("network") == "full":
             break
+        k._domain_clock.advance(61.0)         # > dwell_seconds, so each band crossing clears
         k.record_outcome_verdict(f"t{i}", "network", satisfied=True)
     assert k.ag.band("network") == "full"
     r = c.call("demo_commit", "POST", "/do", body={"x": 1})

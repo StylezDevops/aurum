@@ -261,7 +261,8 @@ class AuthorityGovernor:
 
     def apply_outcome(self, capability_class: str, *, good: bool, grounded: bool,
                       environment: Optional[str] = None, severity: str = "task",
-                      cause: Optional[Dict[str, Any]] = None) -> float:
+                      cause: Optional[Dict[str, Any]] = None,
+                      now: Optional[float] = None) -> float:
         """Outcome-driven authority move — the OI→AG loop primitive. ASYMMETRIC BY DESIGN
         (see outcome_gated_authority_design.md); the asymmetry is the whole safety of it:
 
@@ -279,7 +280,9 @@ class AuthorityGovernor:
 
         Uses the existing band structure + recovery kinetics; does NOT alter the multi-signal
         scoring (_target/_contributions) or the kinetics constants — additive outcome path.
-        Returns the resulting authority for the class."""
+        `now` is forwarded to set_authority so the promotion DWELL (AURUM_ERR_010 anti-flap) is
+        enforced on the real (caller-supplied) clock — a demote ignores dwell, so this only gates
+        rapid re-promotion of a band. Returns the resulting authority for the class."""
         cur = self.authority(capability_class)
         if not good:
             if severity == "governance":
@@ -287,19 +290,20 @@ class AuthorityGovernor:
                 # update, an attempt at the forbidden. FLOOR immediately, not one band.
                 # (The architecture is trend-over-spike EXCEPT here: some categories you
                 # cannot afford to learn about gradually.)
-                self.set_authority(capability_class, self._k["floor"],
+                self.set_authority(capability_class, self._k["floor"], now,
                                    environment=environment, cause=cause)
             else:
                 # TASK failure — "our confidence was too high": a one-band Bayesian nudge.
                 idx = self._band_idx.get(capability_class, len(_BANDS) - 1)
                 demote_to = _BANDS[idx][2] - _DEMOTE_EPSILON  # just under this band's demote line
-                self.set_authority(capability_class, min(cur, demote_to),
+                self.set_authority(capability_class, min(cur, demote_to), now,
                                    environment=environment, cause=cause)
             return self.authority(capability_class)
         if not grounded:
             return cur  # CONSTITUTIONAL: never promote on ungrounded/proxy success
         gain = min(self._k["rise_rate"], self._k["max_gain_per_window"])
-        self.set_authority(capability_class, cur + gain, environment=environment, cause=cause)
+        self.set_authority(capability_class, cur + gain, now,
+                           environment=environment, cause=cause)
         return self.authority(capability_class)
 
     def restore_authority(self, capability_class: str, value: float,
