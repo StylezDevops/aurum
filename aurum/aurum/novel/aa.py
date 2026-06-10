@@ -23,6 +23,8 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Dict, List, Optional, TypedDict
 
+from ..mcp.registry import McpRegistryError
+
 
 class DiscoveryBudget(TypedDict):
     max_tokens: int
@@ -47,12 +49,16 @@ class APIArchaeologist:
                  generator: Optional[Callable[[Dict[str, Any], List[str]], Any]] = None,
                  tester: Optional[Callable[[Any], Dict[str, Any]]] = None,
                  bb_record: Optional[Callable[[Dict[str, Any]], None]] = None,
+                 registry: Any = None,
                  discovery_budget: Optional[DiscoveryBudget] = None,
                  max_search_depth: int = 3, max_candidate_specs: int = 5,
                  max_expansion_attempts: int = 3) -> None:
         self._el, self._tcm, self._gr = el, tcm, gr
         self._searcher, self._generator, self._tester = searcher, generator, tester
         self._bb_record = bb_record
+        # The durable MOUNT registry a synthesized/operator server is RECORDED into (Phase F).
+        # register-not-install: AA never bakes a tool into the --rm image — it records it here.
+        self._registry = registry
         self.discovery_budget: DiscoveryBudget = discovery_budget or dict(_DEFAULT_BUDGET)
         self.max_search_depth = max_search_depth
         self.max_candidate_specs = max_candidate_specs
@@ -160,6 +166,56 @@ class APIArchaeologist:
         self._audit(server, "cage_test_failed_needs_human")
         return {"ok": False, "attempts": attempts,
                 "expansion_signatures": signatures, "needs_human": True}
+
+    # -- 5. registry bridge: register-not-install (governed, EL-logged) ------
+    def register_mcp(self, spec: Dict[str, Any], *, origin: str = "aa_synth") -> Dict[str, Any]:
+        """Record a synthesized/operator MCP server in the durable MOUNT registry — the governed,
+        EL-logged bridge from synthesis to the live MCP layer (register-not-install). A NEW server
+        starts INERT (state=registered → NOT injected); ENABLING it is HUMAN_GATE (enable_mcp).
+        The spec is DATA, never instructions (PK untrusted-content boundary): this records config,
+        it never executes or binds the server's content. RAW SECRETS are rejected by the registry
+        (secret_ref NAMES only); a rejection is logged to EL and re-raised. Requires a registry."""
+        if self._registry is None:
+            raise RuntimeError("AA.register_mcp requires an McpRegistry (none injected)")
+        try:
+            entry = self._registry.register(spec, origin=origin)
+        except McpRegistryError as e:
+            self._lifecycle_audit("MCP_REGISTER_REJECTED", str(spec.get("id") or "?"),
+                                  {"reason": str(e), "origin": origin})
+            raise
+        self._lifecycle_audit("MCP_REGISTER", entry["id"],
+                              {"transport": entry.get("transport"), "url": entry.get("url"),
+                               "secret_ref": entry.get("secret_ref"), "state": entry["state"],
+                               "origin": entry.get("origin")})
+        return entry
+
+    def enable_mcp(self, server_id: str, *, groups: List[str],
+                   approved_by: str) -> Dict[str, Any]:
+        """Activate a registered server for specific groups — HUMAN_GATE (the registry requires
+        `approved_by`; enabling is the capability-adding step that makes the tool live). Conditional
+        injection: the tool is injected only for `groups`. EL-logged with the approver. Requires a
+        registry."""
+        if self._registry is None:
+            raise RuntimeError("AA.enable_mcp requires an McpRegistry (none injected)")
+        entry = self._registry.enable(server_id, groups=list(groups), approved_by=approved_by)
+        self._lifecycle_audit("MCP_ENABLE", server_id,
+                              {"groups": list(groups), "approved_by": approved_by,
+                               "state": entry["state"]})
+        return entry
+
+    def _lifecycle_audit(self, action_type: str, server_id: str,
+                         payload: Dict[str, Any]) -> None:
+        """EL audit for an MCP lifecycle transition (register / enable / rejection). Redaction is
+        EL's single PK policy; the registry already guarantees no raw secret reaches here."""
+        if self._el is None:
+            return
+        body = dict(payload)
+        body["capability_class"] = "tool_lifecycle"
+        self._el.append({
+            "event_id": "", "timestamp": "", "source_organ": "AA",
+            "action_type": action_type, "object_ids": [server_id],
+            "payload": body, "evidence_confidence": 1.0,
+            "evidence_source": "AA", "prev_hash": "", "hash": ""})
 
     @staticmethod
     def _expand(server: Dict[str, Any], dependency: str) -> Dict[str, Any]:

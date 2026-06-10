@@ -6,10 +6,12 @@ re-registered each turn. See aurum.mcp.registry.
 """
 # Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from .registry import (
-    DEPRECATED, ENABLED, QUARANTINED, REGISTERED, McpRegistry, McpRegistryError,
+    DEPRECATED, ENABLED, MCP_REGISTRY_FILENAME, QUARANTINED, REGISTERED,
+    McpRegistry, McpRegistryError, load_enabled_servers,
 )
 
 __all__ = [
-    "McpRegistry", "McpRegistryError",
+    "McpRegistry", "McpRegistryError", "load_enabled_servers",
+    "MCP_REGISTRY_FILENAME",
     "REGISTERED", "ENABLED", "QUARANTINED", "DEPRECATED",
 ]

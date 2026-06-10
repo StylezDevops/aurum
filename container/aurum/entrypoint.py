@@ -115,6 +115,36 @@ def _ensure_plugin_enabled(hermes_home: str, plugin_name: str) -> None:
         pass  # non-fatal: governance hook simply won't load this run
 
 
+def _prepare_mcp_servers(hermes_home: str, group: str) -> None:
+    """CONTAINER LOAD-FROM-MOUNT (Phase F): stage the ENABLED MCP servers for this group so the
+    MCP layer can register them this turn. register-not-install — nothing is downloaded; a remote
+    (http) server needs only its url + secret_ref (OneCLI resolves the value at request time), so
+    it survives `--rm` by construction. Reads the durable mount registry
+    (HERMES_HOME/mcp-servers.json) and writes the filtered injection plan to
+    HERMES_HOME/mcp-active.json. Idempotent + NON-FATAL: no registry / no enabled servers → no-op;
+    any error is swallowed (a single message must not fail because the registry is unreadable)."""
+    if not group:
+        return
+    try:
+        try:
+            from aurum.mcp import load_enabled_servers
+        except ImportError:
+            from aurum.aurum.mcp import load_enabled_servers  # type: ignore[no-redef]
+    except Exception:
+        return
+    try:
+        plan = load_enabled_servers(hermes_home, group)
+    except Exception:
+        return
+    if not plan:
+        return
+    try:
+        with open(os.path.join(hermes_home, "mcp-active.json"), "w", encoding="utf-8") as f:
+            json.dump(plan, f, indent=2, sort_keys=True)
+    except OSError:
+        pass  # non-fatal: the MCP layer simply registers nothing extra this turn
+
+
 def main() -> int:
     try:
         inp = json.loads(sys.stdin.read() or "{}")
@@ -131,6 +161,8 @@ def main() -> int:
     os.makedirs(HERMES_HOME, exist_ok=True)
     _seed_soul(HERMES_HOME, inp.get("assistantName"))
     _ensure_plugin_enabled(HERMES_HOME, "aurum-governance")
+    # Load-from-mount: stage the MCP servers ENABLED for this group (register-not-install).
+    _prepare_mcp_servers(HERMES_HOME, str(inp.get("groupFolder") or ""))
 
     cmd = [sys.executable, HERMES_CLI, "-q", prompt, "--provider", "openrouter", "--quiet"]
     base_url = os.environ.get("ANTHROPIC_BASE_URL")
