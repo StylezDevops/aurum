@@ -23,6 +23,8 @@ Owner absence / degraded mode shrinks the agent, never grows it.
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
+import json
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -104,12 +106,16 @@ class GovernanceKernel:
                  domain_clock: Any = None,
                  identity_bindings: Optional[Dict[str, Dict[str, Any]]] = None,
                  injection_screener: Any = None,
-                 screen_block_threshold: float = 0.8) -> None:
+                 screen_block_threshold: float = 0.8,
+                 verify_constitution: bool = True) -> None:
         base = Path(home) / "governance"
         base.mkdir(parents=True, exist_ok=True)
         # PK first (el=None) — the kernel owns EL logging, which avoids the PK<->EL
         # constructor cycle (EL needs PK.redact; PK does not need EL for check/chain).
-        self.pk = PolicyKernel(rules=rules if rules is not None else default_rules())
+        # Keep the resolved rule table (part of the constitutional surface — see
+        # constitutional_surface) instead of reaching into pk._rules later.
+        self._rules = list(rules) if rules is not None else default_rules()
+        self.pk = PolicyKernel(rules=self._rules)
         self.el = EvidenceLedger(str(base / "el.db"), redactor=self.pk.redact)
         self.ag = AuthorityGovernor(el=self.el)
         self.ca = ConflictArbiter(str(base / "ca.db"), el=self.el)
@@ -183,7 +189,61 @@ class GovernanceKernel:
         # On startup we rebuild AG authority from the durable ledger so governance LEARNS
         # across turns instead of forgetting at every --rm — gated on EL.verify_chain so a
         # tampered durable ledger can never drive authority (it falls back to baseline).
-        self._rehydrate_or_seed(ag_baseline or DEFAULT_AG_BASELINE)
+        self._ag_baseline = dict(ag_baseline or DEFAULT_AG_BASELINE)
+        self._rehydrate_or_seed(self._ag_baseline)
+        # CS-EQ leg 3 — tamper-evidence: if a human-signed constitution manifest + public key are
+        # present on the mount, verify the running constitutional surface against them and FAIL
+        # CLOSED-HARD (raise) on any mismatch. No manifest deployed → no-op (opt-in by ratifying —
+        # scripts/ratify_constitution.py). `verify_constitution=False` is for the ratify tool.
+        if verify_constitution:
+            self._verify_constitution_on_boot(base)
+
+    # -- constitutional surface + tamper-evidence (CS-EQ legs 1 & 3) --------
+
+    def constitutional_surface(self) -> Dict[str, Any]:
+        """The canonical CORE / kinetics / threshold surface a human-signed manifest protects.
+        Pure-JSON + stable so its hash is reproducible across boots/processes. A change to any of
+        these IS a constitutional change — it must be re-ratified out of band, or the next boot
+        fails closed. The cage can PROPOSE a change (write a proposal); it cannot ENACT one (it has
+        no private key)."""
+        from .novel.ag import _BANDS as _AG_BANDS
+        return {
+            "ag_bands": [[n, p, d] for (n, p, d) in _AG_BANDS],
+            "ag_kinetics": dict(self.ag.kinetics()),
+            "ag_dwell_seconds": self.ag.dwell_seconds,
+            "ag_baseline": dict(self._ag_baseline),
+            "governance_failure_classes": sorted(_GOVERNANCE_FAILURE_CLASSES),
+            "screen_block_threshold": self._screen_threshold,
+            "pk_rules": self._rules,
+        }
+
+    def _verify_constitution_on_boot(self, base: Path) -> None:
+        """Verify the running surface against a signed manifest IF one is deployed. No
+        manifest/pubkey on the mount → no-op (tamper-evidence INACTIVE; logged — opt-in by
+        ratifying). Present → recompute the surface hash + verify the ed25519 signature with the
+        PUBLIC key; ANY mismatch raises ConstitutionalBreach (fail-closed-HARD — the kernel refuses
+        to construct, so the plugin's outer guard blocks the turn). The cage holds only the public
+        key; only an out-of-band human key can ratify."""
+        pub_path = (os.environ.get("AURUM_CONSTITUTION_PUBKEY")
+                    or str(base / "constitution_pubkey.pem"))
+        man_path = (os.environ.get("AURUM_CONSTITUTION_MANIFEST")
+                    or str(base / "constitution_manifest.json"))
+        if not (os.path.exists(pub_path) and os.path.exists(man_path)):
+            # No manifest deployed → tamper-evidence INACTIVE (opt-in by ratifying). Deliberately
+            # write NO EL event: the cage builds a kernel per message, so logging here would spam
+            # the ledger every turn; the informative signal is the ABSENCE of a CONSTITUTION_VERIFY
+            # event. Only the ACTIVE path (verifier.verify_on_boot) records to EL.
+            return
+        from .cseq.manifest import ConstitutionVerifier, SignedManifest
+        with open(pub_path, "rb") as fh:
+            pem = fh.read()
+        with open(man_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        manifest = SignedManifest(surface_sha256=str(data["surface_sha256"]),
+                                  version=int(data["version"]),
+                                  signature_hex=str(data["signature_hex"]))
+        # raises ConstitutionalBreach on hash/signature mismatch → propagates out of __init__.
+        ConstitutionVerifier(pem, self.el).verify_on_boot(self.constitutional_surface(), manifest)
 
     # -- persistence: rehydrate authority from the durable ledger -----------
 
