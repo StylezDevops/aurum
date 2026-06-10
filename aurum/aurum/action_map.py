@@ -13,10 +13,17 @@ Three risk tiers (see `aurum_organs_spec.md` degraded-mode posture):
                   consequential; blocked while degraded; results are `trust:untrusted`.
   CONSEQUENTIAL — writes / exec / network egress / tool lifecycle. Blocked while degraded.
 
-Honest v1 limits (documented, not hidden):
-  - justification_sources defaults to ["operator"]: the operator's direct message drove
-    the turn. Full AA/SEN provenance tagging needs SEN (not built). PK still denies any
-    explicitly-untrusted source, and INGEST actions carry an untrusted marker.
+Provenance posture (per-call, M2):
+  - justification_sources defaults to ["operator"]: a MODEL-driven tool call is assumed to
+    serve the operator's turn. SEN is now BUILT and WIRED — when an INGEST tool pulls untrusted
+    content, the live seam records it (kernel.ingest), so the kernel's tainted-turn guard
+    evaluates SUBSEQUENT calls per-call: an irreversible action driven AFTER an injection is
+    blocked unless operator-attributed. PK still HARD-denies any EXPLICITLY untrusted-justified
+    action (the action_from_event path — ingested content cannot trigger an action at all).
+  - a model call's TRUE driver (the operator vs the page it just read) is not knowable from the
+    call alone, so the conservative posture is fail-closed: irreversible-in-a-tainted-turn is
+    blocked pending operator re-confirmation; reversible/consequential calls proceed (AG-gated,
+    flagged tainted_context for audit).
   - the tool tables below are a STARTER mapping; unknown tools default to SAFE_READ-safe
     only if they are demonstrably read-like, else CONSEQUENTIAL (fail-safe: unknown ⇒ treat
     as having side effects).
