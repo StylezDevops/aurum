@@ -52,13 +52,29 @@ class DeadlockDetector:
             if len(recs) < self._params["min_recurrence"]:
                 continue
             # constitutional exclusion: settled policy is never deadlock
-            if all(r["winner_constitutional"] for r in recs
-                   if r["resolution"] == "contract"):
+            if self._settled_policy(recs):
                 continue
             D = self._score(recs)
             if D >= self._params["d_flag"]:
                 self._escalate(sig, recs, D)
         return list(self._open.values())
+
+    @staticmethod
+    def _settled_policy(recs: List[Dict[str, Any]]) -> bool:
+        """Constitutional exclusion: a signature is SETTLED POLICY (never a deadlock) iff EVERY
+        contraction in it had at least ONE CONSTITUTIONAL contracting signal — read from the
+        participants, NOT the named winner. CA names the winner by a fixed most-restrictive order
+        (AG before HVP), so a constitutional HVP contracting ALONGSIDE a non-constitutional AG
+        would be named loser and missed by a winner-only check — falsely escalating settled policy
+        as a governance deadlock. Keying on 'any constitutional contractor' fixes that without
+        touching CA, the persisted winner_constitutional field, the schema, or DD's frozen params."""
+        contracts = [r for r in recs if r["resolution"] == "contract"]
+        if not contracts:
+            return False
+        return all(
+            any(p.get("directive") == "contract" and p.get("constitutional")
+                for p in r.get("participants", []))
+            for r in contracts)
 
     def _score(self, recs: List[Dict[str, Any]]) -> float:
         n = len(recs)
