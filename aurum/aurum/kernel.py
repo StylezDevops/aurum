@@ -37,6 +37,7 @@ from .durability.kve import KnowledgeValidityEngine
 from .extensions.sdg import SkillDependencyGraph
 from .extensions.sm import SubstrateMapper
 from .observability.cc import ConcentrationCheck
+from .observability.mpd import MemoryPoisoningDetector
 from .novel.ag import AuthorityGovernor
 from .novel.oi import OutcomeInterpreter
 from .spine.bb import BlackBox
@@ -144,6 +145,12 @@ class GovernanceKernel:
         # harden-or-split (TCM) systemic-risk signal. Neither blocks the govern() hot path.
         self.rs = ResourceScheduler()
         self.cc = ConcentrationCheck(el=self.el)
+        # MPD — memory-poisoning detector (derived view over EL). Closes the evidence-confidence
+        # feedback loop now that OI+BB exist: scan_memory_integrity() surfaces suspects to BB for
+        # OWNER REVIEW (never auto-deletes), and the verify-gated rehydration below DISTRUSTS the
+        # auto-quarantine subset (a grounded 'success' a later outcome contradicts must not silently
+        # rebuild authority/scope on --rm). Read-only; never blocks the govern() hot path.
+        self.mpd = MemoryPoisoningDetector(el=self.el)
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -175,8 +182,12 @@ class GovernanceKernel:
         for cc, (auth, earned) in history.items():
             if cc not in baseline:
                 self.ag.restore_authority(cc, auth, earned_in=earned)
-        self._rehydrate_familiarity(chain_ok)
-        self._rehydrate_tl(chain_ok)  # H1: TL earned-autonomy tiers survive --rm, like authority
+        # Memory-poisoning overlay: a grounded 'success' a later outcome CONTRADICTS is quarantined
+        # and must not rebuild trust on --rm. Compute the auto-quarantine set ONCE (only meaningful
+        # when the chain verified — we only rehydrate then) and pass it to both projections.
+        quarantine = self.mpd.quarantined_evidence() if chain_ok else set()
+        self._rehydrate_familiarity(chain_ok, quarantine)
+        self._rehydrate_tl(chain_ok, quarantine)  # H1: TL tiers survive --rm, like authority
 
     def _verify_chain_safe(self) -> bool:
         """Verify the durable EL chain ONCE per construction — the single integrity gate shared by
@@ -193,17 +204,24 @@ class GovernanceKernel:
         except Exception:
             return False
 
-    def _rehydrate_familiarity(self, chain_ok: bool) -> None:
+    def _rehydrate_familiarity(self, chain_ok: bool, quarantine: Optional[set] = None) -> None:
         """Rebuild the familiarity projection from the durable EL grounded-outcome stream (the
         chain was verified once upstream — a tampered ledger drives NO familiarity → floor, the
         fail-safe). Replays only HUMAN-GROUNDED-GOOD, domain-scoped outcome_verdict events (proxy
-        never built familiarity, so there is nothing to replay)."""
+        never built familiarity, so there is nothing to replay). MPD-quarantined events (a grounded
+        success a later outcome contradicts) are SKIPPED — a poisoned 'success' must not rebuild
+        familiarity on restart."""
         if not chain_ok:
             return
+        quarantine = quarantine or set()
         records: List[tuple] = []
         try:
             for ev in self.el.query({"source_organ": "GOV",
                                      "action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}):
+                # honour the MPD evidence-confidence overlay: distrust (skip) a contradicted
+                # grounded 'success' — a poisoned success must not rebuild familiarity on --rm.
+                if self.mpd.effective_confidence(ev, quarantined=quarantine) <= 0.0:
+                    continue
                 p = ev.get("payload") or {}
                 if (p.get("outcome") == "outcome_verdict" and p.get("satisfied") is True
                         and p.get("satisfaction_source") == "human"
@@ -214,18 +232,23 @@ class GovernanceKernel:
         if records:
             self.ag.replay_familiarity(records)
 
-    def _rehydrate_tl(self, chain_ok: bool) -> None:
+    def _rehydrate_tl(self, chain_ok: bool, quarantine: Optional[set] = None) -> None:
         """Rebuild TL tiers from the durable EL grounded-outcome stream (H1) — so earned autonomy
         SURVIVES --rm, the same persistence-as-projection AG authority + familiarity already use
         (without it, TL reset to 0 every ephemeral message and never earned anything in the cage).
         Replays human-grounded outcome_verdict events per capability_class IN CHRONOLOGICAL ORDER
-        (tier-up/down sequence matters); verify-gated (tampered ledger → no tiers, the fail-safe)."""
+        (tier-up/down sequence matters); verify-gated (tampered ledger → no tiers, the fail-safe).
+        MPD-quarantined successes are SKIPPED — a poisoned tier-up must not survive restart."""
         if not chain_ok:
             return
+        quarantine = quarantine or set()
         events: List[tuple] = []
         try:
             for ev in self.el.query({"source_organ": "GOV",
                                      "action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}):
+                # same MPD overlay: a contradicted grounded success must not rebuild earned scope.
+                if self.mpd.effective_confidence(ev, quarantined=quarantine) <= 0.0:
+                    continue
                 p = ev.get("payload") or {}
                 cc = p.get("capability_class")
                 if (p.get("outcome") == "outcome_verdict"
@@ -593,6 +616,41 @@ class GovernanceKernel:
         """Artifacts servicing a disproportionate share of ledger activity — the systemic-risk
         signal CC feeds to MGC (do-not-retire) and TCM (harden-or-split). Read-only; never blocks."""
         return self.cc.systemic_risks()
+
+    def scan_memory_integrity(self) -> Dict[str, Any]:
+        """Between-turn memory-poisoning scan (the MPD half of the loop, the FC.evaluate sibling).
+        Surfaces the AUTO-QUARANTINE subset (a grounded success a later outcome contradicts) to BB
+        for OWNER REVIEW — it NEVER auto-deletes (a false positive would erase a real lesson) and
+        never blocks. Idempotent: a suspect already written for review is not re-written (a
+        deterministic BB id, BB being append-only). The same quarantine set drives the
+        evidence-confidence overlay the verify-gated rehydration honours. The broader (owner-review)
+        signature set stays available via `self.mpd.scan()` — it is NOT auto-reviewed here because
+        the spine's own decisions are legitimately uniform-confidence (false-positive-heavy).
+        Returns {quarantined, reviewed}. Best-effort; never raises."""
+        try:
+            quarantined = sorted(self.mpd.quarantined_evidence())
+            reviewed: List[str] = []
+            for sid in quarantined:
+                exp = self.mpd.explain(sid)
+                try:
+                    self.bb.write({
+                        "id": f"mpd-review-{sid}",
+                        "title": f"memory-poisoning suspect: {exp.get('signature')}",
+                        "summary": "MPD flagged this evidence for OWNER REVIEW (never auto-deleted): "
+                                   "a recorded success that a later outcome contradicts.",
+                        "suspect_event_id": sid,
+                        "signature": exp.get("signature"),
+                        "contradicting_events": exp.get("contradicting_events"),
+                    })
+                    reviewed.append(sid)
+                except ValueError:
+                    pass  # already written for review (idempotent) — BB is append-only
+            if quarantined:
+                self._best_effort_log("memory_poison_flag", {"action_id": "mpd-scan"},
+                                      {"quarantined": quarantined, "newly_reviewed": reviewed})
+            return {"quarantined": quarantined, "reviewed": reviewed}
+        except Exception:
+            return {"quarantined": [], "reviewed": []}
 
     # -- failure capture (post-tool-call) -----------------------------------
 
