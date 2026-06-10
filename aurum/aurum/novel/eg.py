@@ -59,13 +59,50 @@ class EpistemicGovernor:
         self._ewma[component] = val
         return val
 
-    # -- composite uncertainty ---------------------------------------------
+    # -- composite uncertainty (STATELESS — deterministic, idempotent) ------
+    def _replay_components(self, steps: List[dict]) -> Dict[str, float]:
+        """Fold the sparse-component EWMA from a CLEAN baseline over `steps` and return the LAST
+        step's components. Pure: it does NOT touch self._ewma. This is the fix for the
+        re-score-mutates-state bug — U is now a deterministic function of the trajectory prefix,
+        so re-scoring (freeze_and_branch / should_branch / audit) never double-folds the EWMA."""
+        ewma: Dict[str, float] = {}
+        comps: Dict[str, float] = {c: 0.0 for c in _COMPONENTS}
+        for s in steps:
+            comps = {}
+            for c in _COMPONENTS:
+                raw = _clamp01(s.get(c, 0.0))
+                if c in _SPARSE:
+                    prev = ewma.get(c)
+                    raw = raw if prev is None else self.ewma_alpha * raw + (1 - self.ewma_alpha) * prev
+                    ewma[c] = raw
+                comps[c] = raw
+        return comps
+
+    def _u_series(self, steps: List[dict]) -> List[float]:
+        """Per-step U over the trajectory, EWMA replayed once from baseline (stateless)."""
+        ewma: Dict[str, float] = {}
+        series: List[float] = []
+        for s in steps:
+            comps: Dict[str, float] = {}
+            for c in _COMPONENTS:
+                raw = _clamp01(s.get(c, 0.0))
+                if c in _SPARSE:
+                    prev = ewma.get(c)
+                    raw = raw if prev is None else self.ewma_alpha * raw + (1 - self.ewma_alpha) * prev
+                    ewma[c] = raw
+                comps[c] = raw
+            series.append(_clamp01(sum(self.weights[c] * comps[c] for c in _COMPONENTS)))
+        return series
+
     def score_step(self, step: dict, traj: dict) -> EGScore:
-        components: Dict[str, float] = {}
-        for c in _COMPONENTS:
-            components[c] = self.smooth_sparse(c, step.get(c, 0.0))
-        U = sum(self.weights[c] * components[c] for c in _COMPONENTS)
-        return {"U": _clamp01(U), "components": components}  # type: ignore[return-value]
+        """U + components for `step`. If `step` is in `traj["steps"]`, the sparse EWMA is replayed
+        over the trajectory up to (and including) it for context; otherwise the step is scored
+        standalone. STATELESS — never mutates self._ewma (so repeated scoring is idempotent)."""
+        steps = (traj or {}).get("steps") or []
+        prefix = steps[:steps.index(step) + 1] if step in steps else [step]
+        comps = self._replay_components(prefix)
+        U = sum(self.weights[c] * comps[c] for c in _COMPONENTS)
+        return {"U": _clamp01(U), "components": comps}  # type: ignore[return-value]
 
     def should_branch(self, traj: dict) -> bool:
         if "U" in traj:
@@ -73,14 +110,14 @@ class EpistemicGovernor:
         steps = traj.get("steps", [])
         if not steps:
             return False
-        return self.score_step(steps[-1], traj)["U"] >= self.threshold
+        return self._u_series(steps)[-1] >= self.threshold
 
     # -- reroute (fork from last good step, NOT a halt) --------------------
     def freeze_and_branch(self, traj: dict) -> List[Any]:
         steps = traj.get("steps", [])
-        # last high-confidence step = lowest-U step before the current tip
-        scored = [(i, self.score_step(s, traj)["U"]) for i, s in enumerate(steps)]
-        good_idx = min(scored, key=lambda t: t[1])[0] if scored else 0
+        # last high-confidence step = lowest-U step (U replayed deterministically from baseline)
+        series = self._u_series(steps)
+        good_idx = min(range(len(series)), key=lambda i: series[i]) if series else 0
         tip = len(steps) - 1 if steps else 0
         branch_a = {"kind": "continue", "from_step": tip}
         branch_b = {"kind": "alternate", "from_step": good_idx}
@@ -148,12 +185,12 @@ class EpistemicGovernor:
     def _audit_branch(self, traj: dict, good_idx: int) -> None:
         if self._el is None:
             return
-        last = traj.get("steps", [{}])[-1] if traj.get("steps") else {}
+        steps = traj.get("steps", [])
         self._el.append({
             "event_id": "", "timestamp": "", "source_organ": "EG",
             "action_type": "BRANCH", "object_ids": [str(traj.get("id", "traj"))],
             "payload": {"capability_class": "epistemic", "from_good_step": good_idx,
-                        "components": self.score_step(last, traj)["components"]},
+                        "components": self._replay_components(steps)},
             "evidence_confidence": 1.0, "evidence_source": "EG",
             "prev_hash": "", "hash": ""})
 
