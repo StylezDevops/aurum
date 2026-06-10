@@ -35,6 +35,7 @@ from .durability.clock import RealDomainClock
 from .durability.el import EvidenceLedger
 from .durability.kve import KnowledgeValidityEngine
 from .extensions.sdg import SkillDependencyGraph
+from .integrations.identity import IdentityScopeMapper
 from .extensions.sm import SubstrateMapper
 from .observability.cc import ConcentrationCheck
 from .observability.mpd import MemoryPoisoningDetector
@@ -100,7 +101,8 @@ class GovernanceKernel:
 
     def __init__(self, home: str, rules: Optional[List[Dict[str, Any]]] = None,
                  ag_baseline: Optional[Dict[str, float]] = None,
-                 domain_clock: Any = None) -> None:
+                 domain_clock: Any = None,
+                 identity_bindings: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
         base = Path(home) / "governance"
         base.mkdir(parents=True, exist_ok=True)
         # PK first (el=None) — the kernel owns EL logging, which avoids the PK<->EL
@@ -151,6 +153,12 @@ class GovernanceKernel:
         # auto-quarantine subset (a grounded 'success' a later outcome contradicts must not silently
         # rebuild authority/scope on --rm). Read-only; never blocks the govern() hot path.
         self.mpd = MemoryPoisoningDetector(el=self.el)
+        # Identity/RBAC scope mapper: resolves a capability class's LIVE authority band to the
+        # least-privilege role+scope it justifies (scope_for). Mints nothing — it returns a JIT
+        # scope REQUEST the managed-identity provider/OneCLI fulfils, so no secret lands in the
+        # container. `identity_bindings` binds a class to its resource scope; unbound → no access
+        # (fail-safe: least privilege means no STANDING access until the operator binds one).
+        self.identity = IdentityScopeMapper(bindings=identity_bindings)
         # Per-process accumulated actions for within-turn chain analysis (007/009).
         self._action_log: List[Dict[str, Any]] = []
         # Usage evidence on the severity rules: how often each failure class actually fires.
@@ -651,6 +659,18 @@ class GovernanceKernel:
             return {"quarantined": quarantined, "reviewed": reviewed}
         except Exception:
             return {"quarantined": [], "reviewed": []}
+
+    # -- least-privilege identity/RBAC scope (live, band-driven) ------------
+    def scope_for(self, capability_class: str, *,
+                  resource: Optional[str] = None) -> Dict[str, Any]:
+        """The least-privilege access scope a class's CURRENT authority justifies — the bridge from
+        live governance authority to real (managed-identity / RBAC) access. Reads AG's live band for
+        the class and maps it: advisory → no access; readonly → read; code → read+write (no delete);
+        full → +delete. As authority is demoted (the reflex on a bad outcome), the grant TIGHTENS on
+        the next call — JIT, never standing. Returns a scope REQUEST (identity+role+scope+ttl); it
+        mints no credential, so no secret enters the container."""
+        return dict(self.identity.scope_for(capability_class, self.ag.band(capability_class),
+                                            resource=resource))
 
     # -- failure capture (post-tool-call) -----------------------------------
 
