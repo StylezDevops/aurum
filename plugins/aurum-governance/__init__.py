@@ -48,6 +48,30 @@ def _import_governance():
     return GovernanceKernel, to_action, risk_tier, SAFE_READ, INGEST
 
 
+def _build_screener():
+    """The injection screener wired into SEN ingestion. Secure-by-default: the zero-dependency
+    HeuristicInjectionScreener is ON unless overridden. AURUM_INJECTION_SCREENER selects:
+    'heuristic' (default) | 'gemini' (fast independent model, fail-safe abstain w/o a key) |
+    'off'/'none' (base provenance taint only). Import failure → None (base taint floor holds)."""
+    try:
+        try:
+            from aurum.support.injection_screen import (
+                GeminiFlashScreener, HeuristicInjectionScreener,
+            )
+        except ImportError:
+            from aurum.aurum.support.injection_screen import (  # type: ignore[no-redef]
+                GeminiFlashScreener, HeuristicInjectionScreener,
+            )
+    except Exception:
+        return None
+    mode = os.environ.get("AURUM_INJECTION_SCREENER", "heuristic").strip().lower()
+    if mode in {"off", "none", "0", "false"}:
+        return None
+    if mode == "gemini":
+        return GeminiFlashScreener()
+    return HeuristicInjectionScreener()
+
+
 def _enabled() -> bool:
     if os.environ.get("AURUM_GOVERNANCE_DISABLE", "").lower() in {"1", "true", "yes", "on"}:
         return False
@@ -72,7 +96,7 @@ def _get_kernel():
     with _kernel_lock:
         if _kernel is None:
             GovernanceKernel, _, _, _, _ = _import_governance()
-            _kernel = GovernanceKernel(home=_home())
+            _kernel = GovernanceKernel(home=_home(), injection_screener=_build_screener())
     return _kernel
 
 
@@ -146,7 +170,9 @@ def _on_post_tool_call(
         # a long-lived host kernel would call kernel.new_turn() at the turn boundary.)
         if tier == INGEST and not errored:
             try:
-                kernel.ingest(source=f"tool:{tool_name}", payload={"tool": tool_name})
+                # pass the RESULT TEXT (the untrusted content that entered context) so SEN's
+                # screener can read it; the kernel keeps only the source + verdict, not the text.
+                kernel.ingest(source=f"tool:{tool_name}", payload=_result_text(result))
             except Exception:
                 pass
         action = to_action(tool_name, args if isinstance(args, dict) else {})
