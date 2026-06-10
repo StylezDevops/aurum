@@ -112,3 +112,38 @@ def test_post_tool_call_disabled_is_noop(tmp_path, monkeypatch):
     # off -> returns without building a kernel or raising
     assert mod._on_post_tool_call("write_file", {"path": "/x"},
                                   result='{"error":"x"}', status="error") is None
+
+
+# ---------------------------------------------------------------------------
+# M2 per-call provenance: untrusted ingestion taints SUBSEQUENT calls in the turn
+# ---------------------------------------------------------------------------
+# delete_record is irreversible but clears the code band at baseline, so the ONLY thing that
+# can block it is the tainted-turn guard — making it a clean probe for per-call taint.
+
+def test_clean_turn_allows_irreversible_within_band(plugin):
+    # No untrusted content ingested → the irreversible call is governed by AG only (allowed).
+    assert plugin._on_pre_tool_call("delete_record", {"id": "x"}) is None
+
+
+def test_ingest_tool_taints_subsequent_irreversible_call(plugin):
+    # A successful INGEST tool pulls untrusted external content (post_tool_call records it) ...
+    plugin._on_post_tool_call("web_fetch", {"url": "http://x"},
+                              result="fetched page text", status="success")
+    # ... so a SUBSEQUENT irreversible model-driven call is blocked by the tainted-turn guard.
+    block = plugin._on_pre_tool_call("delete_record", {"id": "x"})
+    assert isinstance(block, dict)
+    assert "tainted" in block["message"]
+
+
+def test_failed_ingest_does_not_taint(plugin):
+    # A FAILED fetch ingested nothing → no taint → the irreversible call still proceeds.
+    plugin._on_post_tool_call("web_fetch", {"url": "http://x"},
+                              result='{"error": "timeout"}', status="error")
+    assert plugin._on_pre_tool_call("delete_record", {"id": "x"}) is None
+
+
+def test_tainted_turn_allows_reversible_consequential(plugin):
+    # The guard is irreversible-only: a reversible consequential call proceeds (flagged), not blocked.
+    plugin._on_post_tool_call("web_fetch", {"url": "http://x"},
+                              result="fetched page text", status="success")
+    assert plugin._on_pre_tool_call("write_file", {"path": "/x", "content": "y"}) is None
