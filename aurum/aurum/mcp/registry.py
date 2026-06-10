@@ -143,6 +143,15 @@ class McpRegistry:
             entry.setdefault("enabled_groups", [])
             entry["origin"] = entry.get("origin", origin)
             entry["state"] = existing["state"] if existing else REGISTERED
+            # Re-registering an ENABLED server with a CHANGED endpoint/credential-ref/transport/
+            # classification is a capability change that the enable HUMAN_GATE must re-approve —
+            # drop it back to REGISTERED (inert, no groups) so it cannot stay LIVE against a new
+            # target/secret without a fresh enable. Re-registering with the SAME fields is a no-op.
+            if existing and existing.get("state") == ENABLED:
+                if any(existing.get(k) != entry.get(k)
+                       for k in ("url", "secret_ref", "transport", "auth_header", "tools")):
+                    entry["state"] = REGISTERED
+                    entry["enabled_groups"] = []
             entry["created_at"] = existing["created_at"] if existing else now
             entry["updated_at"] = now
             data[sid] = entry
