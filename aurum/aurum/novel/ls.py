@@ -15,6 +15,12 @@ later phase (the hard attribution problem). Invariants enforced here:
     decays as dependents accrue).
   • Phase-5 eligibility is classified on ACTION reversibility (what the rule enables), not rule
     reversibility — a statute permitting any irreversible action is never autonomously adoptable.
+  • RULES ARE EVIDENCED ENTITIES: a rule's standing (grounded/dormant/eroded/unevidenced) is
+    DERIVED from the evidence behind it (`rule_evidence`), not asserted — a rule whose justifying
+    evidence was contradicted (an MPD-quarantined success) erodes to a retirement candidate, and
+    `score` folds that erosion into weakness. The SECOND-ORDER loop (`governance_gaps`) surfaces a
+    'must never' breach class that RECURS despite governance — "why isn't the pre-hoc gate stopping
+    this?" — for owner review (v1 is subtraction-only, so it never auto-creates the missing rule).
 """
 from __future__ import annotations
 
@@ -103,10 +109,17 @@ class LivingSpecification:
         row = self._db.execute("SELECT MAX(version) FROM ls_versions").fetchone()
         return -1 if row[0] is None else row[0]
 
-    # -- scoring: find weak rules (harm or disuse), protect critical -------
-    def score(self, window: Any = None, now: Optional[float] = None) -> Dict[str, Any]:
+    # -- scoring: find weak rules (harm, disuse, or evidence erosion) -------
+    def score(self, window: Any = None, now: Optional[float] = None,
+              contradicted_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Weak = harmful (caller-supplied) OR disused OR EVIDENCE-ERODED. The last makes a rule an
+        evidenced entity: if the evidence that JUSTIFIED a rule was later contradicted (e.g. an
+        MPD-quarantined success), the rule's grounding no longer holds and it becomes a retirement
+        candidate regardless of usage. `contradicted_ids` (from MPD.quarantined_evidence()) is the
+        contradicted-evidence set; absent → back-compatible (erosion contributes nothing)."""
         now = time.time() if now is None else now
         harmful = set((window or {}).get("harmful_rules", []))
+        contradicted = set(contradicted_ids or [])
         adaptive = self.current("adaptive")
         weak = []
         for r in adaptive:
@@ -114,10 +127,80 @@ class LivingSpecification:
                 continue  # rare-but-critical rules are never weak on disuse
             disused = (r["last_used"] is None
                        or (now - r["last_used"]) > self.aging_seconds)
-            if r["rule_id"] in harmful or disused:
+            eroded = bool(contradicted) and any(e in contradicted
+                                                for e in r["supporting_evidence"])
+            if r["rule_id"] in harmful or disused or eroded:
                 weak.append(r["rule_id"])
         return {"metric": 1.0 - len(weak) / max(1, len(adaptive)),
                 "weak_rules": weak}
+
+    # -- rules as evidenced entities + the second-order loop ----------------
+    def rule_evidence(self, now: Optional[float] = None,
+                      contradicted_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Each ACTIVE rule as an EVIDENCED ENTITY — its standing TRACED to the evidence behind it,
+        not asserted. Standing (priority order): `protected` (rare-but-critical, never weak);
+        `eroded` (its supporting evidence was contradicted — `contradicted_ids` from
+        MPD.quarantined_evidence()); `unevidenced` (introduced with NO supporting evidence — a
+        review candidate); `dormant` (disused past the aging window); else `grounded`. Read-only."""
+        now = time.time() if now is None else now
+        contradicted = set(contradicted_ids or [])
+        out: List[Dict[str, Any]] = []
+        for r in self.current():
+            ev_ids = r["supporting_evidence"]
+            n_contra = sum(1 for e in ev_ids if e in contradicted)
+            disused = (r["last_used"] is None
+                       or (now - r["last_used"]) > self.aging_seconds)
+            out.append({"rule_id": r["rule_id"], "region": r["region"],
+                        "age_seconds": now - r["introduced_at"], "disused": disused,
+                        "supporting_evidence": len(ev_ids), "evidence_contradicted": n_contra,
+                        "standing": self._standing(r, len(ev_ids), n_contra, disused)})
+        return out
+
+    def governance_gaps(self, min_recurrence: int = 3,
+                        now: Optional[float] = None) -> List[Dict[str, Any]]:
+        """The SECOND-ORDER loop: 'why isn't the pre-hoc gate stopping this recurring class?'
+
+        A 'must never' breach that PK PRE-blocks never produces an outcome (the action never runs),
+        so it can't show up as a post-hoc demote. Therefore a governance-severity class that DOES
+        recur as `outcome_demote` events in EL is, by construction, one the pre-hoc gate is NOT
+        stopping — and if it recurs (>= min_recurrence) that is a GOVERNANCE GAP. LS is
+        subtraction-only (v1 cannot CREATE a rule — the hard attribution problem), so this only
+        SURFACES the gap for owner review (a human-authored rule may be needed); it never
+        auto-writes one. Read-only over EL; returns findings, audits each to EL."""
+        if self._el is None:
+            return []
+        counts: Dict[str, int] = {}
+        try:
+            for ev in self._el.query({"source_organ": "GOV",
+                                      "action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}):
+                p = ev.get("payload") or {}
+                if p.get("outcome") == "outcome_demote" and p.get("severity") == "governance":
+                    cls = p.get("severity_class")
+                    if cls:
+                        counts[cls] = counts.get(cls, 0) + 1
+        except Exception:
+            return []
+        gaps = [{"class": c, "occurrences": n, "kind": "recurring_unstopped_breach",
+                 "question": "a 'must never' breach recurs post-hoc — why isn't the pre-hoc "
+                             "gate (PK) stopping this class?"}
+                for c, n in sorted(counts.items()) if n >= min_recurrence]
+        for g in gaps:
+            self._audit("GOVERNANCE_GAP", g["class"],
+                        f"recurring_unstopped_x{g['occurrences']}")
+        return gaps
+
+    @staticmethod
+    def _standing(rule: Dict[str, Any], n_evidence: int, n_contradicted: int,
+                  disused: bool) -> str:
+        if rule["protected"]:
+            return "protected"
+        if n_contradicted > 0:
+            return "eroded"        # the evidence that justified it was contradicted
+        if n_evidence == 0:
+            return "unevidenced"   # adaptive rule introduced without grounding
+        if disused:
+            return "dormant"
+        return "grounded"
 
     # -- proposal (subtraction-only in v1; CORE auto-rejected pre-gate) -----
     def propose_revision(self, rule_id: Optional[str] = None, kind: str = "retire",
