@@ -45,6 +45,18 @@ _EMAIL_LOCAL_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234
 _EMAIL_DOMAIN_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
 _OPAQUE_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=_-")
 _OPAQUE_MIN = 32  # a contiguous run of >=32 opaque chars is treated as a possible secret
+# ID/HASH shape: pure lowercase hex + dashes (uuid4().hex, canonical uuid, md5/sha digests). These
+# are IDENTIFIERS and integrity hashes — the join keys replay/lineage depend on (decision_id, …) —
+# never credentials (which use mixed case / base64 / prefixes). EXEMPT from opaque-run redaction so
+# the value-scan can catch bare tokens WITHOUT redacting uuids (the regression that breaks joins).
+_ID_CHARS = frozenset("0123456789abcdef-")
+
+
+def _is_id_shaped(run: str) -> bool:
+    """True iff `run` is pure lowercase-hex + dashes (a uuid/digest shape), so it is exempt from
+    opaque-run redaction. A real credential of this exact shape is vanishingly rare and is still
+    covered by key-name redaction + the secret-by-reference rule."""
+    return bool(run) and all(c in _ID_CHARS for c in run)
 
 
 class LinearRedactor:
@@ -91,7 +103,8 @@ class LinearRedactor:
         opaque = r"[A-Za-z0-9+/=_\-]{32,}"
         out = _re2.sub(email, REDACTED, text)
         out = _re2.sub(kv, REDACTED, out)
-        out = _re2.sub(opaque, REDACTED, out)
+        # id/hash-shaped opaque runs (uuids, digests) are exempt — preserve replay/lineage join keys
+        out = _re2.sub(opaque, lambda m: m.group(0) if _is_id_shaped(m.group(0)) else REDACTED, out)
         return out
 
     # -- linear scanner fallback (no regex, no backtracking) --------------
@@ -143,7 +156,8 @@ class LinearRedactor:
                     while m < n and text[m] in _OPAQUE_OK:
                         m += 1
                     if m - i >= _OPAQUE_MIN:
-                        out.append(REDACTED)
+                        run = text[i:m]
+                        out.append(run if _is_id_shaped(run) else REDACTED)  # exempt uuids/hashes
                         i = m
                         continue
                     out.append(text[i:k if k > i else i + 1])
