@@ -66,3 +66,26 @@ def test_dd_human_gated_recalibration_allowed():
     dd = DeadlockDetector()
     dd.set_parameters({"d_flag": 0.5}, human_gate=True)  # Class-C gate -> allowed
     assert dd._params["d_flag"] == 0.5
+
+
+def test_dd_excludes_settled_policy_even_when_constitutional_signal_is_not_the_winner():
+    # HVP (constitutional) AND AG (non-constitutional) both contract; CA names AG winner by the
+    # fixed order, so winner_constitutional is False — but the contraction IS settled policy
+    # (a constitutional signal is contracting), so DD must NOT escalate it as a deadlock.
+    ca = _ca()
+    for j in (0.9, 0.7, 0.5, 0.3, 0.1):  # >= min_recurrence, justification abating (would score high)
+        ca.arbitrate({"action_id": "a", "capability_class": "c"},
+                     [_sig("AG", "contract", j, const=False),
+                      _sig("HVP", "contract", j, const=True)])
+    assert ca.conflicts()[0]["winner"] == "AG"                       # AG named winner (non-const)
+    assert DeadlockDetector(ca=ca).scan() == []                      # excluded: settled policy
+
+
+def test_dd_still_escalates_a_purely_non_constitutional_abated_contraction():
+    # No constitutional contractor; justification abates while the contraction sticks -> deadlock.
+    ca = _ca()
+    for j in (0.9, 0.7, 0.5, 0.3, 0.1):
+        ca.arbitrate({"action_id": "a", "capability_class": "c"},
+                     [_sig("AG", "contract", j, const=False), _sig("OI", "proceed")])
+    flags = DeadlockDetector(ca=ca).scan()
+    assert len(flags) == 1 and flags[0]["signature"]["capability_class"] == "c"
