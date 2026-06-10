@@ -896,9 +896,12 @@ class GovernanceKernel:
                     "tool_name": action.get("tool_name"), "action_id": action.get("action_id"),
                     "quality": verdict["quality"], "goal_id": goal_id,
                 }
-                # reflex demote — proxy is sufficient to contract (safe direction)
+                # reflex demote — proxy is sufficient to contract (safe direction). `now` from the
+                # domain clock enforces the band DWELL (AURUM_ERR_010); a demote ignores dwell, so
+                # it's harmless here but kept consistent with the promote path below.
                 self.ag.apply_outcome(cc, good=False, grounded=False, environment=env,
-                                      severity=severity, cause=cause)
+                                      severity=severity, cause=cause,
+                                      now=self._domain_clock.now())
                 # TL demote-fast: tier-down is immediate on ANY negative signal, proxy OR grounded
                 # (TL's contract). The grounded path already feeds TL; the proxy-failure path did
                 # not — so a capability that keeps failing at runtime kept its earned scope until a
@@ -947,8 +950,13 @@ class GovernanceKernel:
                 "satisfaction_source": "human",     # the ground-truth, out-of-loop signal
                 "task_id": task_id, "capability_class": capability_class, "domain": domain,
             }
+            # `now` from the domain clock makes the promotion DWELL real (AURUM_ERR_010): a band
+            # cannot be re-promoted within dwell_seconds — anti-flap, previously dead because the
+            # kernel passed now=None. The authority SCALAR still moves each grounded-good outcome;
+            # only the rapid re-crossing of a band boundary is dwell-gated.
             self.ag.apply_outcome(capability_class, good=bool(satisfied), grounded=True,
-                                  environment=environment, cause=cause)
+                                  environment=environment, cause=cause,
+                                  now=observed_at)
             # TL is auto-fed from this grounded (OI ground-truth) outcome: a grounded-good verdict
             # earns scope (tier-up, capped at ceiling); a grounded-bad verdict tiers down. Proxy
             # never reaches here, so proxy never earns TL scope (mirrors the AG promote-slow rule).
