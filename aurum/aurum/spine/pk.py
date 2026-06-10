@@ -89,6 +89,20 @@ _TAINT_SINKS: FrozenSet[str] = frozenset({
 })
 
 
+# Linear-time VALUE redactor (email / key=value / id-exempt opaque), composed into PK.redact so a
+# secret in a NORMAL-named string field is scrubbed too — not only secret-NAMED keys. Lazily bound
+# (and cached) to avoid any import-time coupling; the redactor is stateless + ReDoS-safe.
+_VALUE_REDACTOR: Any = None
+
+
+def _value_scan(s: str) -> str:
+    global _VALUE_REDACTOR
+    if _VALUE_REDACTOR is None:
+        from ..durability.redaction import DEFAULT_REDACTOR
+        _VALUE_REDACTOR = DEFAULT_REDACTOR
+    return _VALUE_REDACTOR.redact(s)
+
+
 def _taint_sig(sources: FrozenSet[str], sinks: FrozenSet[str]) -> str:
     """Stable 16-char hash for a (source-set, sink-set) taint path.
 
@@ -383,7 +397,12 @@ class PolicyKernel:
     # -- redaction ----------------------------------------------------------
 
     def redact(self, payload: Any) -> Any:
-        """Recursively redact sensitive fields.  Single policy for all organs."""
+        """Recursively redact sensitive content. Single policy for all organs, TWO layers:
+        (1) KEY-NAME redaction — a value under a sensitive key name is blanked wholesale; and
+        (2) VALUE-SCAN — a secret in a NORMAL-named string (an email, a `key=value` pair, a
+        bearer/opaque token) is scrubbed by the linear-time redactor. Id/hash-shaped runs (uuids,
+        digests — the join keys replay/lineage need, e.g. decision_id) are EXEMPT from the opaque
+        value-scan, so closing the leak does not break the ledger's replayability."""
         if isinstance(payload, dict):
             return {
                 k: "[REDACTED]"
@@ -393,6 +412,8 @@ class PolicyKernel:
             }
         if isinstance(payload, list):
             return [self.redact(item) for item in payload]
+        if isinstance(payload, str):
+            return _value_scan(payload)
         return payload
 
     def add_redact_field(self, field: str) -> None:
