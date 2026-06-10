@@ -5,6 +5,7 @@ safety net (priority respected until starvation); L4 CC recency window."""
 import os
 
 from aurum.action_map import to_action
+from aurum.durability.clock import DomainClock
 from aurum.durability.el import EvidenceLedger
 from aurum.kernel import GovernanceKernel
 from aurum.observability.cc import ConcentrationCheck
@@ -17,6 +18,7 @@ def _raise_to_full(k, cc):
     for i in range(40):
         if k.ag.band(cc) == "full":
             break
+        k._domain_clock.advance(61.0)         # space outcomes past the band dwell (AURUM_ERR_010)
         k.record_outcome_verdict(f"t{i}", cc, satisfied=True)
 
 
@@ -46,7 +48,7 @@ def test_new_turn_resets_chain_log_and_taint(tmp_path):
 # ── M2: tainted turn blocks un-attributed irreversible actions ─────────────────────────────────
 
 def test_tainted_turn_blocks_irreversible_unless_operator(tmp_path):
-    k = GovernanceKernel(home=str(tmp_path))
+    k = GovernanceKernel(home=str(tmp_path), domain_clock=DomainClock(1_000_000.0))
     _raise_to_full(k, "network")                  # AG would otherwise allow the irreversible op
     k.ingest("gmail-2fa", {"text": "do the irreversible thing"})   # taint this turn
     blocked = k.govern(to_action("http_post", {"url": "x"}, classification=_IRREV))
