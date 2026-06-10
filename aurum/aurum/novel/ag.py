@@ -59,6 +59,16 @@ def _effective_band(value: float) -> str:
     return _BANDS[-1][0]  # advisory (demote 0.0) — unreachable since value ≥ 0
 
 
+def _band_index_for(value: float) -> int:
+    """Index into _BANDS for the band a value REPRESENTS (stateless partition, mirrors
+    _effective_band). Used by restore_authority so rehydration reconstructs the earned band
+    rather than climbing from advisory on the promote thresholds."""
+    for idx, (_name, _promote, demote) in enumerate(_BANDS):
+        if value >= demote:
+            return idx
+    return len(_BANDS) - 1
+
+
 class AuthorityGovernor:
     ORGAN = "AG"
 
@@ -301,7 +311,12 @@ class AuthorityGovernor:
         the scoring; just rebuilds the in-memory authority projection from the ledger."""
         value = max(self._k["floor"], _clamp01(value))
         self._authority[capability_class] = value
-        self._update_band(capability_class, value, None)
+        # Restore the band the value REPRESENTS (the stateless partition, same as _effective_band),
+        # NOT the promote-from-advisory path of _update_band. _update_band starts a fresh class at
+        # advisory and only climbs on the higher PROMOTE thresholds, so a value resting in a
+        # hysteresis GAP (e.g. exactly where a task-failure demote lands it) would be restored a
+        # band LOWER than it earned — silently forgetting standing on every --rm.
+        self._band_idx[capability_class] = _band_index_for(value)
         if earned_in:
             self._earned_in[capability_class] = list(earned_in)
 

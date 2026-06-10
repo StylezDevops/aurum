@@ -146,15 +146,19 @@ def build_docker_argv(
     plain_env: Dict[str, str],
     network: Optional[str] = None,
     image: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> List[str]:
     """Build the `docker run` argv. Pure + testable (no subprocess).
 
     INVARIANT: only non-secret config (base_url, model) is ever passed as `-e`.
     Secrets travel via stdin inside ContainerInput, NEVER here — so they never appear
     in argv / `docker inspect` / `ps`. `network` is an optional `--network` passthrough
-    (deployment's egress choice; see CAGE_NETWORK_ENV).
+    (deployment's egress choice; see CAGE_NETWORK_ENV). `name` (optional) labels the
+    container so a timed-out turn can be force-reaped (`docker rm -f`).
     """
     argv: List[str] = ["docker", "run", "--rm", "-i"]
+    if name:
+        argv += ["--name", name]
     # Run as the host user where the platform supports it, so files written to the
     # RW group mount are host-owned (best effort; Docker Desktop on Windows handles
     # ownership itself and has no getuid).
@@ -170,13 +174,42 @@ def build_docker_argv(
     return argv
 
 
+CAGE_TURN_TIMEOUT_ENV = "AURUM_CAGE_TURN_TIMEOUT_SEC"
+_DEFAULT_TURN_TIMEOUT = 600.0
+
+
+def _turn_timeout() -> float:
+    """Per-turn wall-clock cap. The cage OWNS the timeout (the container entrypoint deliberately
+    sets none). A bad/non-positive env value falls back to the default rather than disabling it."""
+    try:
+        t = float(os.environ.get(CAGE_TURN_TIMEOUT_ENV, _DEFAULT_TURN_TIMEOUT))
+    except (TypeError, ValueError):
+        return _DEFAULT_TURN_TIMEOUT
+    return t if t > 0 else _DEFAULT_TURN_TIMEOUT
+
+
+async def _reap_container(name: str) -> None:
+    """Best-effort force-remove a named container (the timed-out turn's). `docker run --rm` only
+    reaps on a CLEAN exit, so a killed client can leave the container running — remove it explicitly."""
+    try:
+        p = await asyncio.create_subprocess_exec(
+            "docker", "rm", "-f", name,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        await p.wait()
+    except Exception:  # noqa: BLE001 — reaping is best-effort; never raise from cleanup
+        pass
+
+
 async def docker_runner(
     ci: Dict[str, Any], mount_args: List[str], plain_env: Dict[str, str]
 ) -> Dict[str, Any]:
     """Run one turn in `docker run --rm`. Secrets are NOT here — they're inside `ci`
-    (stdin). Only non-secret config (base_url, model) is passed as `-e`."""
+    (stdin). Only non-secret config (base_url, model) is passed as `-e`. A turn that exceeds
+    the wall-clock cap is KILLED and its container reaped, so a hung turn (stalled model, dead
+    proxy — the documented 19-minute hang) cannot pin the broker forever or leak a container."""
+    name = f"aurum-turn-{uuid.uuid4().hex[:12]}"
     argv = build_docker_argv(
-        mount_args, plain_env, network=os.environ.get(CAGE_NETWORK_ENV)
+        mount_args, plain_env, network=os.environ.get(CAGE_NETWORK_ENV), name=name
     )
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -187,7 +220,25 @@ async def docker_runner(
         )
     except FileNotFoundError:
         return {"status": "error", "result": None, "error": "docker not found on host"}
-    out, err = await proc.communicate(json.dumps(ci).encode("utf-8"))
+    timeout = _turn_timeout()
+    try:
+        out, err = await asyncio.wait_for(
+            proc.communicate(json.dumps(ci).encode("utf-8")), timeout=timeout)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await _reap_container(name)
+        return {"status": "error", "result": None,
+                "error": f"caged turn exceeded {timeout:.0f}s timeout; container killed"}
+    except asyncio.CancelledError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await _reap_container(name)
+        raise
     stdout = out.decode("utf-8", errors="replace")
     parsed = parse_container_output(stdout)
     if parsed.get("status") == "error" and proc.returncode not in (0, None):
