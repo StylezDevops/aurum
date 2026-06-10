@@ -79,8 +79,17 @@ class GovernedHttpClient:
              auth: bool = True) -> Dict[str, Any]:
         """Govern, then (if allowed) send. Classification comes from the tool's DECLARED entry, so
         gating is mount-driven. Returns `{ok, gated, allowed, result|error|rule_id|reason}`."""
+        # The actual egress TARGET (method + full URL) MUST be part of the governed action so
+        # PK/govern() can see, gate, and audit the destination — not just the static tool class.
+        # Previously only `body` was passed, so to_action derived an EMPTY resource and govern()
+        # never saw where the request was going (a model-/registry-supplied `path` could redirect
+        # the host past a gate that never inspected it). The real request still uses `body`/`path`;
+        # this copy is only for governance.
+        gov_args = dict(body or {})
+        gov_args["url"] = self.base_url + path
+        gov_args["method"] = method
         decision = self.kernel.govern(
-            to_action(tool, body or {}, classification=self._tool_classes.get(tool)))
+            to_action(tool, gov_args, classification=self._tool_classes.get(tool)))
         if not decision.allow:
             return {"ok": False, "gated": True, "allowed": False,
                     "rule_id": decision.rule_id, "reason": decision.reason}

@@ -37,6 +37,8 @@ GLOBAL = "__global__"
 CLOSED = "closed"
 OPEN = "open"
 LOCKOUT = "lockout"
+# Severity order — a trip may only ESCALATE, never downgrade (CLOSED < OPEN < LOCKOUT).
+_RANK = {CLOSED: 0, OPEN: 1, LOCKOUT: 2}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS cb_breakers (
@@ -81,6 +83,14 @@ class CircuitBreaker:
             capability, status = GLOBAL, LOCKOUT
         else:
             status = OPEN
+        # ESCALATE-ONLY: never DOWNGRADE an existing breaker. Without this, a later ordinary global
+        # trip (e.g. a spend spike, status=OPEN) would overwrite a GLOBAL LOCKOUT down to OPEN via
+        # the ON CONFLICT update — silently clearing the human-reset-only emergency stop. A weaker
+        # trip on an already-stronger breaker is a no-op on status (the audit still records it).
+        existing = self._status(capability)
+        if existing is not None and _RANK.get(existing, 0) > _RANK.get(status, 0):
+            self._audit("trip", capability, sig, swallow=True)
+            return
         self._db.execute(
             "INSERT INTO cb_breakers(capability,status,signal,tripped_at) "
             "VALUES (?,?,?,?) "
@@ -92,13 +102,17 @@ class CircuitBreaker:
         self._audit("trip", capability, sig, swallow=True)
 
     def state(self, capability: str = GLOBAL) -> str:
-        """Breaker status for a capability. A global LOCKOUT shadows everything."""
+        """Breaker status for a capability. A global LOCKOUT shadows everything; a global OPEN
+        (a system-wide anomaly trip with no specific capability) ALSO shadows per-capability
+        queries — the effective status is the more-restrictive of the global and per-capability
+        breakers (else a global OPEN would be invisible to per-capability callers: fail-open)."""
         g = self._status(GLOBAL)
         if g == LOCKOUT:
             return LOCKOUT
         if capability == GLOBAL:
             return g or CLOSED
-        return self._status(capability) or CLOSED
+        statuses = [s for s in (g, self._status(capability)) if s]
+        return max(statuses, key=lambda s: _RANK.get(s, 0)) if statuses else CLOSED
 
     def reset(self) -> None:  # HUMAN_GATE
         """Clear ALL anomaly breakers (incl. lockout). Growth freezes are a separate

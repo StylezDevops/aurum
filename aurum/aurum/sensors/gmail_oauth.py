@@ -13,9 +13,12 @@ never a crash.
 from __future__ import annotations
 
 import base64
+import logging
 from typing import Any, List, Optional
 
 from .gmail_2fa import EmailMessage
+
+logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -58,11 +61,14 @@ class GmailApiReader:
     leave it None and it is built lazily from `token_path` (auto-refreshing via the stored
     refresh token). Same `fetch_recent` contract as MailboxReader."""
 
+    last_error: Optional[Exception] = None   # last fetch failure (None = clean); inspectable
+
     def __init__(self, *, token_path: str = "secrets/gmail_token.json",
                  service: Any = None, user_id: str = "me") -> None:
         self._token_path = token_path
         self._service = service
         self._user_id = user_id
+        self.last_error = None
 
     def _get_service(self) -> Any:
         if self._service is None:
@@ -91,6 +97,15 @@ class GmailApiReader:
                 full = svc.users().messages().get(
                     userId=self._user_id, id=ref["id"], format="full").execute()
                 out.append(parse_gmail_message(full))
+            self.last_error = None
             return out                              # Gmail returns newest-first
-        except Exception:
-            return []                               # fail-safe: missed read, retry next wake
+        except Exception as e:
+            # Fail-safe (return [] → retry next wake) but NOT silent: a dead/revoked OAuth token
+            # raises here (invalid_grant) and previously looked identical to an empty inbox. Log it
+            # + expose `last_error` so a persistent auth failure is visible, not a phantom 'no mail'.
+            self.last_error = e
+            logger.error("GmailApiReader.fetch_recent failed (%s: %s) — returning no mail. If this "
+                         "persists it is likely an auth/token failure; re-run "
+                         "scripts/gmail_consent.py to refresh the OAuth token.",
+                         type(e).__name__, e)
+            return []

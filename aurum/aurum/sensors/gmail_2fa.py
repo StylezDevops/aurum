@@ -19,11 +19,14 @@ INJECTABLE so the capture logic is fully testable without a live mailbox.
 from __future__ import annotations
 
 import email
+import logging
 import re
 import time
 from dataclasses import dataclass
 from email.message import Message
 from typing import Any, Callable, List, Optional, Sequence
+
+logger = logging.getLogger(__name__)
 
 from ..durability.clock import execution_now  # noqa: F401 (documents: poll waits are EXECUTION time)
 
@@ -100,6 +103,8 @@ class MailboxReader:
     never logged. `connect` is injectable (default: a real imaplib SSL login) so capture logic is
     testable with a fake mailbox."""
 
+    last_error: Optional[Exception] = None   # last fetch failure (None = clean); inspectable
+
     def __init__(self, *, user: str, app_password: str, host: str = "imap.gmail.com",
                  port: int = 993, mailbox: str = "INBOX",
                  connect: Optional[Callable[[], Any]] = None) -> None:
@@ -109,6 +114,7 @@ class MailboxReader:
         self._port = port
         self._mailbox = mailbox
         self._connect = connect or self._default_connect
+        self.last_error = None
 
     def _default_connect(self) -> Any:  # pragma: no cover - needs a live mailbox
         import imaplib
@@ -121,9 +127,10 @@ class MailboxReader:
                      limit: int = 10) -> List[EmailMessage]:
         """Newest-first recent messages matching the filters. Fail-safe: any IMAP error yields an
         empty list (a missed read just means 'retry next wake'), never a crash."""
-        conn = self._connect()
+        conn = None
         try:
-            conn.select(self._mailbox)
+            conn = self._connect()           # inside the try: a failed LOGIN is caught + surfaced,
+            conn.select(self._mailbox)        # not propagated uncaught (it logs in here)
             criteria: List[str] = []
             if unseen_only:
                 criteria.append("UNSEEN")
@@ -146,14 +153,23 @@ class MailboxReader:
                     from_addr=str(msg.get("From", "")),
                     body=_message_body(msg),
                     uid=uid.decode() if isinstance(uid, bytes) else str(uid)))
+            self.last_error = None
             return out
-        except Exception:
-            return []                            # fail-safe: missed read, retry next wake
+        except Exception as e:
+            # Fail-safe (return [] → retry) but NOT silent: a revoked app-password / failed LOGIN
+            # raises here and previously looked identical to an empty inbox. Log it + expose
+            # `last_error` so a persistent auth failure is visible, not a phantom 'no 2FA email'.
+            self.last_error = e
+            logger.error("MailboxReader.fetch_recent failed (%s: %s) — returning no mail. If this "
+                         "persists it is likely IMAP auth (a revoked app-password), not an empty "
+                         "inbox.", type(e).__name__, e)
+            return []
         finally:
-            try:
-                conn.logout()
-            except Exception:
-                pass
+            if conn is not None:
+                try:
+                    conn.logout()
+                except Exception:
+                    pass
 
 
 class TwoFactorWatcher:
