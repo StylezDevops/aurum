@@ -44,9 +44,13 @@ def canonical_surface_bytes(surface: Dict[str, Any]) -> bytes:
     (CORE, kinetics, immune-system thresholds, per-tool governance_required flags) that scale
     dynamically, so naive serialization yields a different SHA-256 each boot and tears the
     external rope with a false ConstitutionalBreach. NEVER hash a native Python object/repr —
-    only this canonical form. Any code that hashes any part of the surface MUST route here."""
-    return json.dumps(surface, sort_keys=True, separators=(",", ":"),
-                      default=str).encode("utf-8")
+    only this canonical form. Any code that hashes any part of the surface MUST route here.
+
+    The surface MUST be pure JSON (scalars/lists/dicts). A non-JSON value RAISES here (TypeError)
+    rather than being silently coerced via str() — a silent coercion could let two structurally
+    different surfaces stringify to the same bytes and hash-collide, so a tampered surface could
+    validate against a signed manifest. Fail loud at ratify/verify time instead."""
+    return json.dumps(surface, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def surface_hash(surface: Dict[str, Any]) -> str:
