@@ -16,6 +16,14 @@ Two implementations, same ``__call__(text) -> ScreenVerdict`` interface:
   - HeuristicInjectionScreener — offline, deterministic, zero-dependency (the always-on floor).
   - GeminiFlashScreener — a fast, INDEPENDENT model (HVP-shaped: a separate cheaper model is an
     independent check), with an injectable transport so it is fully testable offline.
+
+Native-`re`-on-untrusted-input posture (the AURUM_ERR_068 concern, scoped to this sensor): the
+heuristic patterns are REVIEWED-LINEAR — alternations and BOUNDED lazy gaps (`.{0,N}?`) only,
+no nested unbounded quantifiers, so no catastrophic backtracking exists to trigger — and the
+scanned text is HARD-CAPPED (`_SCAN_CAP`) so total work is bounded regardless of input size.
+The cap cannot weaken the floor: a screener only ESCALATES taint, so a hit hiding past the cap
+merely forgoes escalation while the base provenance taint still applies. A perf regression test
+(test_injection_screen) holds this linearity the way the 068 test holds redaction's.
 """
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
@@ -92,6 +100,11 @@ _STRONG_RE = [(re.compile(p, re.IGNORECASE | re.DOTALL), name)
               for p, name in _OVERRIDE_STRONG + _EXFIL]
 _WEAK_RE = [(re.compile(p, re.IGNORECASE | re.DOTALL), name) for p, name in _OVERRIDE_WEAK]
 
+# Hard bound on how much text one screen() scans (chars). Legitimate inbound (a Telegram message,
+# an email body) is orders of magnitude smaller; the cap turns "adversarially huge input" into
+# bounded work instead of a CPU sink. Floor-safe by construction: the screener only ESCALATES.
+_SCAN_CAP = 200_000
+
 
 class HeuristicInjectionScreener:
     """Deterministic, offline, zero-dependency screener — the always-on floor. A STRONG override /
@@ -103,6 +116,7 @@ class HeuristicInjectionScreener:
 
     def __call__(self, text: Any) -> ScreenVerdict:
         s = text if isinstance(text, str) else ("" if text is None else str(text))
+        s = s[:_SCAN_CAP]   # bounded work on adversarially huge input (see module docstring)
         strong = [name for rx, name in _STRONG_RE if rx.search(s)]
         weak = [name for rx, name in _WEAK_RE if rx.search(s)]
         if not strong and not weak:
@@ -162,6 +176,7 @@ class GeminiFlashScreener:
 
     def __call__(self, text: Any) -> ScreenVerdict:
         s = text if isinstance(text, str) else ("" if text is None else str(text))
+        s = s[:_SCAN_CAP]   # same bound: don't ship an adversarially huge payload to the model
         if not s.strip():
             return abstain()
         try:
