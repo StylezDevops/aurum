@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from ..durability.clock import DAY
+from ..support.rs import ResourceScheduler
 
 HOUR = 3600.0
 
@@ -68,6 +69,9 @@ class GovernanceScheduler:
         self._tasks: Dict[str, _Task] = {}
         self._rs = rs
         self._now_fn = now_fn or time.time
+        # Results of SCHEDULE tasks run INLINE when there is no RS — buffered so drain() returns
+        # them (otherwise inline work would run but be reported as nothing).
+        self._inline_results: List[Dict[str, Any]] = []
 
     # -- registration / configuration --------------------------------------
     def register(self, name: str, fn: Callable[[], Any], *, triggers: Any,
@@ -122,11 +126,13 @@ class GovernanceScheduler:
         fired: List[str] = []
         for task in self._tasks.values():
             if task.enabled and SCHEDULE in task.triggers and self._due(task, now):
-                task.last_run = now            # gate resubmission until the next interval
                 if self._rs is not None:
                     self._rs.submit(self._job_for(task), task.rs_weight)
                 else:
-                    self._run(task)
+                    self._inline_results.append(self._run(task))
+                # stamp last_run only AFTER a successful submit/run — if submit raised, the task is
+                # NOT gated out and is retried next tick (last_run is the SCHEDULE marker, not exec).
+                task.last_run = now
                 fired.append(task.name)
         return fired
 
@@ -155,7 +161,8 @@ class GovernanceScheduler:
         """Execute RS-queued maintenance jobs (callables) until the queue is empty or `max_jobs`
         is reached. Foreground work, if any, is dispatched first by RS. Fail-safe per job."""
         if self._rs is None:
-            return []
+            out, self._inline_results = self._inline_results, []   # return inline-run results
+            return out
         ran: List[Dict[str, Any]] = []
         while max_jobs is None or len(ran) < max_jobs:
             job = self._rs.next()
@@ -217,8 +224,13 @@ def default_governance_scheduler(kernel: Any, *, policy: Optional[Dict[str, Dict
     then apply DEFAULT_POLICY, then the operator's `policy` overrides (last wins). Tasks are
     REGISTERED with their full supported trigger set (capability) but start disabled — DEFAULT_POLICY
     turns the good ones on. Organ-level tasks the kernel doesn't hold (LS.governance_gaps,
-    FC.evaluate, CS-EQ scans) are registered by the deployer with `sched.register(...)`."""
-    sched = GovernanceScheduler(rs=getattr(kernel, "rs", None), now_fn=now_fn)
+    FC.evaluate, CS-EQ scans) are registered by the deployer with `sched.register(...)`.
+
+    Maintenance runs on its OWN dedicated ResourceScheduler — deliberately NOT the shared
+    `kernel.rs` (submit_background/next_background). A maintenance `drain()` executes every callable
+    it dequeues, so sharing the queue would let it steal/reorder other organs' background jobs;
+    isolation keeps maintenance from touching general background work."""
+    sched = GovernanceScheduler(rs=ResourceScheduler(), now_fn=now_fn)
     bg = {"priority": 0.2, "foreground": False}
     sched.register("memory_integrity", kernel.scan_memory_integrity,
                    triggers=[TURN, SCHEDULE, OPERATOR, EVENT], enabled=False,
@@ -245,18 +257,20 @@ def run_maintenance_loop(run_once: Callable[[float], Any], *, interval_seconds: 
     knob is injectable so the loop is fully testable WITHOUT real waiting: `now_fn` (default
     time.time), `sleep_fn` (default time.sleep), `should_continue` (default forever — pass a flag
     to stop), `max_iterations` (default unbounded). Each iteration is FAIL-SAFE: an exception in
-    `run_once` is swallowed so the loop survives a transient fault. Returns the iteration count;
-    it does not sleep after the final iteration."""
+    `run_once` is swallowed so the loop survives a transient fault. Returns the iteration count.
+    `should_continue` is evaluated EXACTLY ONCE per iteration (sleeping at the TOP of each
+    non-first pass), so a stateful/side-effecting predicate is not double-invoked, and there is no
+    trailing sleep after the final pass."""
     now = now_fn or time.time
     sleep = sleep_fn or time.sleep
     keep_going = should_continue or (lambda: True)
     n = 0
     while keep_going() and (max_iterations is None or n < max_iterations):
+        if n > 0:
+            sleep(interval_seconds)   # between passes only — not before the first, not after the last
         try:
             run_once(now())
         except Exception:  # noqa: BLE001 — a transient maintenance fault must not kill the loop
             pass
         n += 1
-        if keep_going() and (max_iterations is None or n < max_iterations):
-            sleep(interval_seconds)
     return n

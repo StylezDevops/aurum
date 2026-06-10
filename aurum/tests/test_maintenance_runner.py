@@ -8,6 +8,9 @@ path is fail-safe.
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 from aurum.build_state import is_built
@@ -18,6 +21,16 @@ pytestmark = pytest.mark.skipif(
     not is_built("PK", "EL", "AG", "CA", "BB"),
     reason="governance organs not all built",
 )
+
+_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "governance_maintenance.py"
+
+
+def _load_script():
+    spec = importlib.util.spec_from_file_location("gov_maint_script", _SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+    return mod
 
 
 # ── kernel.run_maintenance: tick + drain, cached scheduler, interval-gated ─────
@@ -36,6 +49,36 @@ def test_run_maintenance_is_fail_safe(tmp_path):
     # even if the scheduler/RS misbehaves, run_maintenance must not raise (it returns []).
     k._maintenance_scheduler = object()                  # a broken scheduler (no tick/drain)
     assert k.run_maintenance() == []
+
+
+def test_maintenance_does_not_consume_general_background_jobs(tmp_path):
+    # FIX (review): the maintenance scheduler runs on its OWN RS, not kernel.rs — so a maintenance
+    # pass must NOT steal/consume jobs submitted via kernel.submit_background.
+    k = GovernanceKernel(home=str(tmp_path))
+    sentinel = object()
+    k.submit_background(sentinel, {"priority": 0.5})
+    k.run_maintenance(now=1e9)                           # drains the dedicated RS, not kernel.rs
+    assert k.next_background() is sentinel               # the general background job is untouched
+
+
+def test_run_maintenance_reapplies_policy_on_later_call(tmp_path):
+    # FIX (review): policy on a later call must reconfigure, not be silently dropped.
+    k = GovernanceKernel(home=str(tmp_path))
+    k.run_maintenance(now=1.0)
+    assert k._maintenance_scheduler.tasks()["concentration"]["enabled"] is True
+    k.run_maintenance(now=2.0, policy={"concentration": {"enabled": False}})
+    assert k._maintenance_scheduler.tasks()["concentration"]["enabled"] is False
+
+
+# ── host runner script guards (review fixes) ──────────────────────────────────
+def test_script_bad_interval_env_falls_back(monkeypatch):
+    monkeypatch.setenv("AURUM_MAINTENANCE_INTERVAL", "1h")     # non-numeric
+    assert _load_script()._interval_default() == 3600.0        # safe fallback, no crash
+
+
+def test_script_rejects_nonpositive_interval(tmp_path):
+    with pytest.raises(SystemExit):                            # argparse .error → SystemExit(2)
+        _load_script().main(["--interval", "0", "--home", str(tmp_path)])
 
 
 # ── the host loop: injectable, bounded, fail-safe ──────────────────────────────

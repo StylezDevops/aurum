@@ -689,12 +689,15 @@ class GovernanceKernel:
         """Drive the maintenance scheduler ONCE: submit due SCHEDULE tasks to RS and run them
         (tick + drain). The default scheduler is built on FIRST call and CACHED, so interval gating
         holds across calls in a long-lived kernel (a host loop calls this on an interval; the cage
-        may call it opportunistically at message time). `policy` applies only when the scheduler is
-        first built. Best-effort — never raises (maintenance must not crash a turn). Returns the
-        drained task results."""
+        may call it opportunistically at message time). `policy` is applied when the scheduler is
+        first built AND re-applied on later calls (a reconfigure is never silently dropped).
+        Best-effort — never raises (maintenance must not crash a turn). Returns the drained task
+        results."""
         try:
             if self._maintenance_scheduler is None:
                 self._maintenance_scheduler = self.maintenance(policy=policy)
+            elif policy:
+                self._maintenance_scheduler.configure(policy)   # honour a later reconfigure too
             self._maintenance_scheduler.tick(now)
             return self._maintenance_scheduler.drain()
         except Exception:

@@ -27,20 +27,27 @@ if _PKG_ROOT not in sys.path:
 
 from aurum.kernel import GovernanceKernel  # noqa: E402
 from aurum.observability.triggers import run_maintenance_loop  # noqa: E402
+from aurum.paths import state_root  # noqa: E402
 
 
-def _state_root() -> str:
-    return (os.environ.get("AURUM_STATE_ROOT")
-            or os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes"))
+def _interval_default() -> float:
+    """AURUM_MAINTENANCE_INTERVAL as a float, or 3600 if unset/non-numeric (never crash at
+    parser-build time — a bad env value must not break --help)."""
+    try:
+        return float(os.environ.get("AURUM_MAINTENANCE_INTERVAL", "3600"))
+    except (TypeError, ValueError):
+        return 3600.0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Aurum governance maintenance runner (host loop).")
-    ap.add_argument("--interval", type=float, default=float(os.environ.get("AURUM_MAINTENANCE_INTERVAL", 3600)),
+    ap.add_argument("--interval", type=float, default=_interval_default(),
                     help="seconds between maintenance passes (default 3600 / env AURUM_MAINTENANCE_INTERVAL)")
     ap.add_argument("--once", action="store_true", help="run a single pass and exit")
-    ap.add_argument("--home", default=_state_root(), help="governance state root (durable mount)")
+    ap.add_argument("--home", default=state_root(), help="governance state root (durable mount)")
     args = ap.parse_args(argv)
+    if not args.once and args.interval <= 0:
+        ap.error("--interval must be > 0 (a non-positive interval would busy-loop)")
 
     kernel = GovernanceKernel(home=args.home)
     if args.once:
