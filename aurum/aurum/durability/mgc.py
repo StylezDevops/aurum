@@ -46,20 +46,27 @@ class MemoryGarbageCollector:
         self._db.executescript(_SCHEMA)
 
     # -- scan (lease-aware, reference-aware) -------------------------------
-    def scan(self, inventory: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """-> {archivable, mergeable, retirable}. Skips CS-leased and CS-referenced."""
+    def scan(self, inventory: Optional[Dict[str, Any]] = None,
+             do_not_retire: Optional[Any] = None) -> Dict[str, Any]:
+        """-> {archivable, mergeable, retirable}. Skips CS-leased and CS-referenced artifacts AND
+        anything in `do_not_retire` — the CC systemic-risk set (the kernel passes
+        concentration_risks()): an artifact servicing a disproportionate share of activity is a
+        single point of concentration that must NOT be swept, even if TCM/lease think it idle. This
+        wires the do-not-retire guard the module docstring promises (previously absent: scan only
+        checked leases, so CC's signal never actually protected anything)."""
         inv = inventory or {}
+        protected = set(do_not_retire or [])
         archivable = [s for s in inv.get("skills", [])
-                      if not self._leased(s) and not self._referenced(s)]
+                      if not self._leased(s) and not self._referenced(s) and s not in protected]
         # duplicate lessons (same signature) -> one mergeable group per signature
         groups: Dict[str, List[str]] = {}
         for lesson in inv.get("lessons", []):
             groups.setdefault(lesson["signature"], []).append(lesson["id"])
         mergeable = [ids for ids in groups.values() if len(ids) > 1]
-        # retirable tools come from TCM; never sweep a leased one
+        # retirable tools come from TCM; never sweep a leased one or a do-not-retire (CC) one
         tools = (self._tcm.retirement_candidates() if self._tcm is not None
                  else inv.get("tools", []))
-        retirable = [t for t in tools if not self._leased(t)]
+        retirable = [t for t in tools if not self._leased(t) and t not in protected]
         return {"archivable": archivable, "mergeable": mergeable, "retirable": retirable}
 
     def _leased(self, artifact_id: str) -> bool:

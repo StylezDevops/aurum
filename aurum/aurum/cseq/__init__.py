@@ -25,6 +25,7 @@ everything else rests on) and escalates — it never weakens anything in respons
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional
 
 from .economics import (
@@ -93,8 +94,9 @@ class ConstitutionalStability:
         incident = (regime == BREACH) or (not equilibrium_holds(d))
         payload = {
             "capability_class": capability_class,
-            "D": (None if d == float("inf") else d),
-            "D_is_inf": d == float("inf"),
+            "D": (None if math.isinf(d) else d),     # normalise BOTH +inf and -inf (governed
+            "D_is_inf": math.isinf(d),               # p_success==0 → -inf), not just +inf — a raw
+            #                                          -inf would serialise as non-standard JSON.
             "regime": regime,
             "constitutional_incident": incident,
         }
