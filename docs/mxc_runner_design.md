@@ -11,7 +11,9 @@ candidate **second cage backend** beside `docker_runner` (`aurum/aurum/cage/brok
   `createConfigFromPolicy` / `spawnSandboxFromConfig` (+ policy helpers).
 - **It is NOT on PyPI.** The PyPI package named `mxc` (0.1.0) is **"ProperMX CLI"** by an
   unrelated third party. `pip install mxc` is a supply-chain footgun — never do it, never
-  let a script or doc suggest it.
+  let a script or doc suggest it. The lesson generalises: **verify the artifact, not the
+  name** — an alpha package on npm is the same supply-chain surface as the PyPI trap, just
+  one ecosystem over (see the integrity-pinning requirement below).
 - **Public preview**: Microsoft states schemas/APIs may change before 1.0, generated
   policies are currently **over-permissive in known cases**, and **no MXC profile should be
   treated as a security boundary yet**.
@@ -57,6 +59,17 @@ MountJail → policy JSON, (b) invokes a **pinned, vendored Node shim** that cal
 `ContainerInput` / `AURUM_OUTPUT` sentinel contract, (d) sits behind an explicit runner
 flag (docker stays the default). MXC's arrival must never be an argument for relaxing any
 Aurum enforcement — governance composes with sandboxes; it is not replaced by them.
+
+**Pin the shim's dependency by INTEGRITY HASH, not just version.** A semver pin
+(`"@microsoft/mxc-sdk": "0.x.y"`) still trusts the registry to serve the same bytes for
+that name+version forever — exactly the trust the PyPI `mxc` squat shows is misplaced, one
+ecosystem over. Concretely: commit the shim's `package-lock.json` with its `integrity`
+(sha512) fields and install with `npm ci` ONLY (which fails closed on any integrity
+mismatch — never `npm install` in CI/deploy); preferably also vendor the SDK tarball and
+record its sha512 beside it, so the build needs no registry fetch at all. An alpha-channel
+package whose schemas churn before 1.0 is the highest-risk moment for a substituted or
+compromised release — the integrity hash is what turns "trust the name" into "verify the
+artifact".
 
 Sources: [microsoft/mxc](https://github.com/microsoft/mxc) ·
 [@microsoft/mxc-sdk on npm](https://www.npmjs.com/package/@microsoft/mxc-sdk) ·
