@@ -29,7 +29,10 @@ def test_ledger_latency_metrics(tmp_path):
     assert m["in_flight"] == 0               # nothing in flight at rest
     assert m["p50_ms"] >= 0.0 and m["p99_ms"] >= m["p50_ms"]
     before = m["append_count"]
-    k.govern(to_action("write_file", {"path": "/x", "content": "y"}))   # a proceed → append
+    # a govern proceed now writes to the DECISIONS surface (log_decision), not the hash chain;
+    # an OUTCOME (proxy demote) is what appends a TRUST_CHANGE + outcome event to the chain.
+    k.observe_outcome(to_action("write_file", {"path": "/x"}),
+                      {"completed": False, "proxy_satisfied": False})
     assert t.ledger_latency()["append_count"] > before
 
 
@@ -40,14 +43,13 @@ def test_governance_event_rate(tmp_path):
     assert cold["total_decisions"] == 0                       # no DECISIONS yet (clean no-op)
     assert all(v == 0 for v in cold["by_outcome"].values())
 
-    k.govern(to_action("write_file", {"path": "/x", "content": "y"}))   # proceed
+    k.govern(to_action("write_file", {"path": "/x", "content": "y"}))   # allow
     k.govern(to_action("send_email", {}))                               # deny (ag:ceiling)
     r = t.governance_event_rate()
-    assert r["by_outcome"]["proceed"] >= 1
+    assert r["by_outcome"]["allow"] >= 1
     assert r["by_outcome"]["deny"] >= 1
-    assert r["total_decisions"] >= 2
-    assert r["by_action_type"].get("GOVERNANCE_DECISION", 0) >= 2
-    assert r["by_action_type"].get("TRUST_CHANGE", 0) >= 1    # baseline seed events
+    assert r["total_decisions"] >= 2                         # counted on the decisions surface
+    assert r["by_action_type"].get("TRUST_CHANGE", 0) >= 1    # baseline seed events (the ledger)
 
 
 def test_authority_distribution(tmp_path):

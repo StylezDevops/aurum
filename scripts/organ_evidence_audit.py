@@ -61,23 +61,6 @@ def _attribute(rule_id: str) -> List[str]:
     return organs
 
 
-def _find_rule_id(obj: Any) -> str:
-    """Recursively pull the first rule_id out of a decision's reason_json (shape-tolerant)."""
-    if isinstance(obj, dict):
-        if isinstance(obj.get("rule_id"), str):
-            return obj["rule_id"]
-        for v in obj.values():
-            found = _find_rule_id(v)
-            if found:
-                return found
-    elif isinstance(obj, list):
-        for v in obj:
-            found = _find_rule_id(v)
-            if found:
-                return found
-    return ""
-
-
 def _ro(path: str) -> sqlite3.Connection:
     uri = f"file:{path.replace(os.sep, '/')}?mode=ro"
     return sqlite3.connect(uri, uri=True)
@@ -110,33 +93,25 @@ def audit(paths: List[str]) -> Dict[str, Any]:
                     r["consequential"] += n
                 if r["last_event"] is None or (last and last > r["last_event"]):
                     r["last_event"] = last
-            # Leg 2 — blocked decisions attributed to the organ whose rule fired. The kernel
-            # records its decisions as GOVERNANCE_DECISION events (payload.outcome:
-            # proceed|deny|needs_gate, with rule_id on blocks); the decisions TABLE is a
-            # second surface for log_decision callers — read BOTH (verified empirically:
-            # a live kernel writes the events; the table stays empty).
-            for (payload,) in db.execute(
-                    "SELECT payload FROM evidence_ledger "
-                    "WHERE action_type='GOVERNANCE_DECISION'"):
-                try:
-                    d = json.loads(payload)
-                except (TypeError, ValueError):
-                    continue
-                outcome = str(d.get("outcome", "")) or "(none)"
-                decision_totals[outcome] = decision_totals.get(outcome, 0) + 1
-                if outcome in ("deny", "needs_gate"):
-                    for organ in _attribute(_find_rule_id(d)):
-                        row(organ)["attributed_blocks"] += 1
+            # Leg 2 — governance decisions live in the `decisions` table (the ONE by-value replay
+            # surface): final_decision allow|deny|needs_gate, and reason_json.reason_codes attribute
+            # a block to the organ whose rule fired. (GOVERNANCE_DECISION EVENTS are now OUTCOME
+            # events only — outcome_verdict/_demote/_hold — counted under authored events in leg 1,
+            # never per-action decisions.)
             for final, reason_json in db.execute(
                     "SELECT final_decision, reason_json FROM decisions"):
                 decision_totals[final] = decision_totals.get(final, 0) + 1
                 if final in ("deny", "needs_gate"):
                     try:
-                        rid = _find_rule_id(json.loads(reason_json))
-                    except (TypeError, ValueError):
-                        rid = ""
-                    for organ in _attribute(rid):
-                        row(organ)["attributed_blocks"] += 1
+                        codes = json.loads(reason_json).get("reason_codes", [])
+                    except (TypeError, ValueError, AttributeError):
+                        codes = []
+                    seen: set = set()
+                    for code in codes:
+                        for organ in _attribute(str(code)):
+                            if organ not in seen:
+                                row(organ)["attributed_blocks"] += 1
+                                seen.add(organ)
             # Leg 3 — arbitration wins (the organ's contraction carried the outcome).
             # winner='none' is CA recording that NO contraction won (proceed) — not an organ.
             for winner, n in db.execute(
@@ -163,7 +138,7 @@ def main(argv: List[str] | None = None) -> int:
         print(json.dumps(report, indent=2))
         return 0
     d = report["decisions"]
-    print(f"ledgers: {len(report['ledgers'])}   decisions: {d.get('proceed', 0)} proceed / "
+    print(f"ledgers: {len(report['ledgers'])}   decisions: {d.get('allow', 0)} allow / "
           f"{d.get('deny', 0)} deny / {d.get('needs_gate', 0)} needs_gate\n")
     hdr = f"{'organ':<6} {'verdict':<12} {'authored':>8} {'stateful':>8} {'blocks':>7} {'arbwins':>7}  last_event"
     print(hdr + "\n" + "-" * len(hdr))

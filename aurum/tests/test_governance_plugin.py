@@ -70,8 +70,9 @@ def test_kill_switch_bypasses(plugin, monkeypatch):
 
 def test_decisions_logged_to_el(plugin):
     plugin._on_pre_tool_call("write_file", {"path": "/x", "content": "y"})
-    events = plugin._get_kernel().el.query({"action_type": "GOVERNANCE_DECISION"})
-    assert any(e["payload"].get("outcome") == "proceed" for e in events)
+    decisions = plugin._get_kernel().el.recent_decisions()
+    assert any(d["final_decision"] == "allow"
+               and d["snapshot"]["ca_outcome"]["resolution"] == "proceed" for d in decisions)
 
 
 # ---------------------------------------------------------------------------
