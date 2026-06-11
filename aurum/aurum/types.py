@@ -53,6 +53,9 @@ ELActionType = Literal[
     # CS-EQ — constitutional stability (legs 1 & 3) + integrity probes
     "CONSTITUTION_VERIFY", "CONSTITUTION_PROPOSAL", "CONSTITUTION_INCIDENT",
     "EQUILIBRIUM_OBS", "INTEGRITY_PROBE",
+    # Integrity signals — epistemic evidence about the trajectory (NEVER a floor; see the
+    # constitutional invariant in kernel.py). A SEPARATE channel from per-action decisions.
+    "INTEGRITY_SIGNAL",
     # FC — forced contestability (re-justification of elite pathways)
     "FC_REJUSTIFY_SCHEDULED", "FC_REJUSTIFY_PASSED", "FC_REJUSTIFY_FAILED",
 ]
