@@ -144,3 +144,26 @@ aurum_24kr_labelops_design.md
 
 # Private instance layer (24KR label-ops) — never in public Aurum
 instance/
+
+# Runtime state + build artifacts — never versioned. Organ SQLite DBs are mutable per-run
+# state (a committed el.db dirties the repo on every test run and leaks ledger state); zips
+# are build artifacts. (Several were swept in by an earlier `git add -A -- aurum/`; untracked
+# here and ignored so it cannot recur.)
+*.db
+*.zip
+
+# Serena MCP local project/tooling state (per-developer; not a repo artifact).
+.serena/
+
+# Local design / working docs — us-only, never committed (the spec/strategy/reference layer).
+# These guide the build but are not the codebase; keep them out of public Aurum.
+aurum_organs_spec.md
+aurum_build_brief.md
+aurum_build_sprints.md
+aurum_LS_design.md
+aurum_arbitration_spec.md
+outcome_gated_authority_design.md
+CURRENT_PROJECT_STATUS.md
+eg_design_notes.md
+governance_bench.md
+docs/aurum_*_reference.md
