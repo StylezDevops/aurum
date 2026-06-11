@@ -188,6 +188,12 @@ class GovernanceKernel:
         # container. `identity_bindings` binds a class to its resource scope; unbound → no access
         # (fail-safe: least privilege means no STANDING access until the operator binds one).
         self.identity = IdentityScopeMapper(bindings=identity_bindings)
+        # OPERATOR IDENTITY — ed25519 PUBLIC keys for verifying operator verdicts: the signed
+        # ground truth that may EXPAND authority (submit_operator_verdict; integrations/
+        # operator_verdict.py). Loaded from <home>/governance/operator_pubkeys/*.pem (or
+        # AURUM_OPERATOR_PUBKEYS). NO keys deployed → no signed promotion is possible → the agent
+        # is CONTRACTION-ONLY, which is the v1 default-safe posture (automatic loss, signed gain).
+        self.operator_verifier = self._load_operator_verifier(base)
         # Lazily-built, CACHED maintenance scheduler (see run_maintenance) — cached so SCHEDULE
         # interval gating holds across calls in a long-lived kernel. None until first use.
         self._maintenance_scheduler: Any = None
@@ -1039,7 +1045,9 @@ class GovernanceKernel:
 
     def record_outcome_verdict(self, task_id: str, capability_class: str,
                                satisfied: bool, *, environment: Optional[str] = None,
-                               domain: Optional[str] = None) -> None:
+                               domain: Optional[str] = None,
+                               operator_key_id: Optional[str] = None,
+                               verdict_id: Optional[str] = None) -> None:
         """Ground-truth (out-of-loop / human) outcome path. This is the ONLY path that may
         PROMOTE authority. A grounded GOOD verdict slow-promotes the class; a grounded BAD
         verdict demotes it (reinforcing the reflex). Best-effort; never raises.
@@ -1057,7 +1065,11 @@ class GovernanceKernel:
                 "decision_id": decision_id,
                 "trigger": "outcome_verdict",
                 "classified": "good" if satisfied else "bad",
-                "satisfaction_source": "human",     # the ground-truth, out-of-loop signal
+                # the ground-truth, out-of-loop signal — and WHICH operator, by value, so a
+                # promotion is attributable (authority↑ because verdict V signed by operator K).
+                "satisfaction_source": (f"operator:{operator_key_id}" if operator_key_id
+                                        else "human"),
+                "operator_key_id": operator_key_id, "verdict_id": verdict_id,
                 "task_id": task_id, "capability_class": capability_class, "domain": domain,
             }
             # `now` from the domain clock makes the promotion DWELL real (AURUM_ERR_010): a band
@@ -1078,7 +1090,9 @@ class GovernanceKernel:
                 "outcome_verdict",
                 {"action_id": task_id, "capability_class": capability_class},
                 {"decision_id": decision_id, "satisfied": bool(satisfied),
-                 "satisfaction_source": "human",
+                 "satisfaction_source": (f"operator:{operator_key_id}" if operator_key_id
+                                         else "human"),
+                 "operator_key_id": operator_key_id, "verdict_id": verdict_id,
                  "authority": self.ag.authority(capability_class),
                  "domain": domain, "observed_at": observed_at,
                  "volatility": self.kve.volatility(domain) if domain else None})
@@ -1086,6 +1100,81 @@ class GovernanceKernel:
                 self.ag.record_familiarity(domain, observed_at)
         except Exception:
             pass
+
+    # -- the ONLY production path that may EXPAND authority: a verified operator verdict --------
+
+    def _load_operator_verifier(self, base: Path) -> Any:
+        """Build the operator-verdict verifier from ed25519 public keys on the mount. Import/IO
+        failure → None (no verifier ⇒ no signed promotion ⇒ contraction-only; the safe default)."""
+        try:
+            from .integrations.operator_verdict import OperatorVerdictVerifier
+        except Exception:
+            return None
+        pubs: Dict[str, bytes] = {}
+        key_dir = Path(os.environ.get("AURUM_OPERATOR_PUBKEYS") or (base / "operator_pubkeys"))
+        try:
+            if key_dir.is_dir():
+                for pem in sorted(key_dir.glob("*.pem")):
+                    pubs[pem.stem] = pem.read_bytes()
+        except Exception:
+            pubs = {}
+        return OperatorVerdictVerifier(pubs)
+
+    def _verdict_already_consumed(self, vid: str) -> bool:
+        """True if a prior outcome_verdict already recorded this verdict_id — single-use, so a
+        signed promotion cannot be REPLAYED to over-promote. Read over the durable outcome stream."""
+        try:
+            for ev in self.el.query({"source_organ": "GOV", "action_type": "GOVERNANCE_DECISION",
+                                     "limit": 1_000_000}):
+                p = ev.get("payload") or {}
+                if p.get("outcome") == "outcome_verdict" and p.get("verdict_id") == vid:
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def submit_operator_verdict(self, signed: Any) -> Dict[str, Any]:
+        """Submit a SIGNED operator verdict — the ONLY production path that may EXPAND authority
+        (v1: automatic contraction, human-grounded/SIGNED expansion). The ed25519 signature is
+        verified against a registered operator PUBLIC key; on success the verdict promotes via
+        record_outcome_verdict with the operator identity recorded BY VALUE in the lineage (a
+        promotion is thereby attributable: authority↑ because verdict V signed by operator K). On
+        ANY failure — no verifier configured, bad signature, or a replayed (already-consumed)
+        verdict — authority is NOT expanded; contraction-only stands. A grounded BAD verdict (a
+        demote) is honoured even unsigned (contraction is always safe), attributed when signed.
+        Best-effort; never raises. Returns {promoted, verified, reason, operator_key_id, ...}."""
+        v = dict(getattr(signed, "verdict", None) or {})
+        cc = v.get("capability_class")
+        satisfied = bool(v.get("satisfied"))
+        vid = getattr(signed, "id", None)
+        key_id = self.operator_verifier.verify(signed) if self.operator_verifier else None
+        if key_id is None:
+            # Unverified PROMOTE → refuse (never expand authority on an unsigned claim). An
+            # unverified DEMOTE is still honoured (contraction is safe), recorded unattributed.
+            if not satisfied and cc:
+                self.record_outcome_verdict(str(v.get("task_id") or "op"), cc, False,
+                                            environment=v.get("environment"), domain=v.get("domain"))
+                return {"promoted": False, "demoted": True, "verified": False,
+                        "reason": "unverified verdict — demote honoured (contraction is safe)"}
+            self._best_effort_log("operator_verdict_rejected",
+                                  {"action_id": str(v.get("task_id") or "op"), "capability_class": cc},
+                                  {"reason": "no valid operator signature", "verdict_id": vid})
+            return {"promoted": False, "verified": False,
+                    "reason": "no valid operator signature — authority NOT expanded"}
+        if not cc:
+            return {"promoted": False, "verified": True, "reason": "verdict missing capability_class"}
+        if vid and self._verdict_already_consumed(vid):
+            self._best_effort_log("operator_verdict_rejected",
+                                  {"action_id": str(v.get("task_id") or "op"), "capability_class": cc},
+                                  {"reason": "verdict already consumed (replay)",
+                                   "verdict_id": vid, "operator_key_id": key_id})
+            return {"promoted": False, "verified": True,
+                    "reason": "verdict already consumed (replay)", "operator_key_id": key_id}
+        self.record_outcome_verdict(str(v.get("task_id") or "op"), cc, satisfied,
+                                    environment=v.get("environment"), domain=v.get("domain"),
+                                    operator_key_id=key_id, verdict_id=vid)
+        return {"promoted": bool(satisfied), "demoted": not satisfied, "verified": True,
+                "operator_key_id": key_id, "verdict_id": vid}
 
     def why_authority(self, capability_class: str) -> Optional[Dict[str, Any]]:
         """Replay the WHY of the latest authority change for a class — reconstructed from the
