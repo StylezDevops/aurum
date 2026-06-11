@@ -234,6 +234,16 @@ class EvidenceLedger:
         self._db.execute("PRAGMA foreign_keys=ON;")
         self._db.execute("PRAGMA busy_timeout=10000;")  # wait on a concurrent writer, don't error
         self._db.executescript(_SCHEMA)
+        # Schema migration (evolving schema; old DBs on disk gain the column): the COMPLETE
+        # BY-VALUE decision snapshot. The typed columns (trust/authority/...) stay for queryability,
+        # but snapshot_json holds the whole governance state a decision was made against — copied
+        # literally, never a pointer/seq into mutable (or since-redacted) state — so a future
+        # auditor reconstructs the decision from this one row. The score is a compression; this
+        # JSON is the evidence behind it (the institutional-memory substrate).
+        try:
+            self._db.execute("ALTER TABLE evidence_snapshots ADD COLUMN snapshot_json TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already present
         # DEDICATED chain-append connection (AURUM_ERR_031): append's tip-read -> insert runs in a
         # BEGIN IMMEDIATE transaction on THIS connection, so (a) no other statement from this
         # process can join the transaction (all other reads/writes use self._db), and (b) writers
@@ -439,13 +449,15 @@ class EvidenceLedger:
         try:
             self._db.execute(
                 "INSERT INTO evidence_snapshots(snapshot_id,ts,trust,authority,"
-                "active_rules_json,active_goals_json,knowledge_state_hash,environment_hash)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                "active_rules_json,active_goals_json,knowledge_state_hash,environment_hash,"
+                "snapshot_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
                 (sid, snap.get("ts") or _utc_now_iso(),
                  snap.get("trust"), snap.get("authority"),
                  json.dumps(snap.get("active_rules", [])),
                  json.dumps(snap.get("active_goals", [])),
-                 snap.get("knowledge_state_hash"), snap.get("environment_hash")),
+                 snap.get("knowledge_state_hash"), snap.get("environment_hash"),
+                 snap.get("snapshot_json")),
             )
         except sqlite3.Error as e:
             raise RuntimeError(f"EL.write_evidence_snapshot failed: {e}") from e
@@ -470,13 +482,15 @@ class EvidenceLedger:
             # snapshot FIRST — the decision's FK requires it to exist.
             self._db.execute(
                 "INSERT INTO evidence_snapshots(snapshot_id,ts,trust,authority,"
-                "active_rules_json,active_goals_json,knowledge_state_hash,environment_hash)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                "active_rules_json,active_goals_json,knowledge_state_hash,environment_hash,"
+                "snapshot_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
                 (sid, snapshot.get("ts") or ts,
                  snapshot.get("trust"), snapshot.get("authority"),
                  json.dumps(snapshot.get("active_rules", [])),
                  json.dumps(snapshot.get("active_goals", [])),
-                 snapshot.get("knowledge_state_hash"), snapshot.get("environment_hash")),
+                 snapshot.get("knowledge_state_hash"), snapshot.get("environment_hash"),
+                 snapshot.get("snapshot_json")),
             )
             self._db.execute(
                 "INSERT INTO decisions(decision_id,ts,action_requested,final_decision,"
@@ -580,7 +594,7 @@ class EvidenceLedger:
         row = self._db.execute(
             "SELECT d.decision_id,d.final_decision,d.authority_score,d.reason_json,"
             "s.active_rules_json,s.active_goals_json,s.knowledge_state_hash,"
-            "s.environment_hash FROM decisions d "
+            "s.environment_hash,s.snapshot_json FROM decisions d "
             "JOIN evidence_snapshots s ON d.evidence_snapshot_id = s.snapshot_id "
             "WHERE d.el_seq=?", (seq,)).fetchone()
         if row is None:
@@ -589,7 +603,33 @@ class EvidenceLedger:
                 "reason": json.loads(row[3] or "{}"),
                 "active_rules": json.loads(row[4] or "[]"),
                 "active_goals": json.loads(row[5] or "[]"),
-                "knowledge_state_hash": row[6], "environment_hash": row[7]}
+                "knowledge_state_hash": row[6], "environment_hash": row[7],
+                "snapshot": json.loads(row[8]) if row[8] else None}
+
+    def recent_decisions(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Governance decisions newest-first, each with its COMPLETE BY-VALUE snapshot — the
+        replay surface a future auditor reads. No JOIN to mutable state for the truth: the
+        snapshot_json IS the record (the typed snapshot columns are only for queryability)."""
+        rows = self._db.execute(
+            "SELECT d.decision_id,d.ts,d.action_requested,d.final_decision,d.authority_score,"
+            "d.reason_json,s.snapshot_json FROM decisions d "
+            "JOIN evidence_snapshots s ON d.evidence_snapshot_id = s.snapshot_id "
+            "ORDER BY d.ts DESC, d.rowid DESC LIMIT ?", (limit,)).fetchall()
+        return [{"decision_id": r[0], "ts": r[1], "action_requested": r[2],
+                 "final_decision": r[3], "authority_score": r[4],
+                 "reason": json.loads(r[5] or "{}"),
+                 "snapshot": json.loads(r[6]) if r[6] else None} for r in rows]
+
+    def decision_outcome_counts(self, since: Optional[str] = None) -> Dict[str, int]:
+        """{final_decision: count} over the decisions surface (allow|deny|needs_gate) — the
+        per-action decision rate, distinct from the GOVERNANCE_DECISION outcome/health events."""
+        q = "SELECT final_decision, COUNT(*) FROM decisions"
+        args: tuple = ()
+        if since is not None:
+            q += " WHERE ts >= ?"
+            args = (since,)
+        q += " GROUP BY final_decision"
+        return {r[0]: r[1] for r in self._db.execute(q, args).fetchall()}
 
     def count_decisions(self, since: Optional[str] = None) -> int:
         if since is None:

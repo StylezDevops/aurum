@@ -36,6 +36,7 @@ a new channel or tool inherits it only by routing through the cage seams.
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -423,6 +424,84 @@ class GovernanceKernel:
         except Exception:
             pass
 
+    # -- the ONE replay surface: a complete, by-value decision record --------
+
+    def _decision_snapshot(self, action: Dict[str, Any], *, final: str,
+                           pk_decision: Optional[str] = None,
+                           chain_decision: Optional[str] = None,
+                           ca_resolution: Optional[str] = None,
+                           ca_winner: Optional[str] = None,
+                           reason_codes: Optional[List[str]] = None,
+                           fam: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """A COMPLETE, BY-VALUE snapshot of the governance state a decision was made against —
+        every field copied LITERALLY at decision time, never a pointer/seq into mutable (or
+        since-redacted) state — so a future auditor reconstructs the decision from this one record.
+        The authority SCORE is a compression; this snapshot is the evidence behind it (governance
+        provenance / institutional memory)."""
+        cc = action.get("capability_class", "default")
+        domain = action.get("domain")
+        fam = fam if fam is not None else {}
+        band = (self.ag.effective_band(cc, domain or "unknown", **fam) if fam
+                else self.ag.band(cc))
+        familiarity: Optional[Dict[str, Any]] = None
+        if fam and domain:
+            familiarity = {"domain": domain, "validity": fam.get("validity"),
+                           "volatility": fam.get("volatility"),
+                           "factor": self.ag.familiarity_factor(domain, **fam),
+                           "effective_n": self.ag.familiarity_effective_n(domain, **fam)}
+        return {
+            "ag_band": band,                                  # by value
+            "ag_authority": self.ag.authority(cc),            # by value
+            "earned_in": list(self.ag.earned_in(cc)),         # provenance, by value
+            "familiarity": familiarity,                       # by value (None if not domain-scoped)
+            "tl_tier": self.tl.tier(cc),                      # by value
+            "pk_outcome": pk_decision,                        # by value
+            "chain_outcome": chain_decision,                  # by value
+            "ca_outcome": {"resolution": ca_resolution, "winner": ca_winner},  # by value
+            "environment": action.get("environment") or "unknown",            # by value
+            "identity": self.identity.scope_for(cc, band),    # the JIT scope grant, by value
+            "reason_codes": list(reason_codes or []),         # by value
+            "taint": {"untrusted": sorted(s for s in self._ingested_untrusted if s),
+                      "hostile": sorted(s for s in self._ingested_hostile if s)},  # by value
+            "capability_class": cc, "tool_name": action.get("tool_name"),
+            "final_decision": final,
+        }
+
+    def _record_decision(self, snapshot: Dict[str, Any], *, raising: bool) -> None:
+        """Persist a governance decision to the ONE replay surface — the `decisions` table + its
+        by-value `evidence_snapshots` row (log_decision is atomic, snapshot-FIRST, fail-closed).
+        ALLOW uses raising=True (write-then-act: a decision that cannot be recorded must not
+        proceed); deny/gate use best-effort (a denial is fail-safe even unlogged). No EL event and
+        no el_seq pointer — the decision is self-contained by value."""
+        cc = snapshot["capability_class"]
+        decision = {
+            "action_requested": snapshot.get("tool_name") or cc,
+            "final_decision": snapshot["final_decision"],
+            "authority_score": snapshot["ag_authority"],
+            "reason_json": json.dumps({"reason_codes": snapshot["reason_codes"],
+                                       "pk": snapshot["pk_outcome"],
+                                       "chain": snapshot["chain_outcome"],
+                                       "ca": snapshot["ca_outcome"]}, sort_keys=True),
+            "replayable": 1,
+        }
+        knowledge = json.dumps({"familiarity": snapshot["familiarity"],
+                                "earned_in": snapshot["earned_in"]}, sort_keys=True)
+        snap_row = {
+            "authority": snapshot["ag_authority"],
+            "trust": float(snapshot["tl_tier"]),
+            "active_rules": snapshot["reason_codes"],
+            "knowledge_state_hash": hashlib.sha256(knowledge.encode("utf-8")).hexdigest(),
+            "environment_hash": snapshot["environment"],
+            "snapshot_json": json.dumps(snapshot, sort_keys=True, default=str),
+        }
+        if raising:
+            self.el.log_decision(decision, snap_row, el_seq=None)
+        else:
+            try:
+                self.el.log_decision(decision, snap_row, el_seq=None)
+            except Exception:
+                pass
+
     def _require_el_healthy(self) -> None:
         """A broken EL blocks even reads (can't audit ⇒ AURUM_ERR_011). Raises
         _SpineFault if EL is unavailable."""
@@ -489,13 +568,15 @@ class GovernanceKernel:
             raise _SpineFault(f"PK.check failed: {e}") from e
 
         if pk_result["decision"] == "deny":
-            self._best_effort_log("deny", action,
-                                  {"rule_id": pk_result["rule_id"], "reason": pk_result["reason"]})
+            self._record_decision(self._decision_snapshot(
+                action, final="deny", pk_decision="deny",
+                reason_codes=[pk_result["rule_id"]]), raising=False)
             return GovernanceDecision(allow=False, reason=pk_result["reason"],
                                       rule_id=pk_result["rule_id"])
 
-        # 2. SAFE_READ short-circuit — no CA, no EL write (don't bloat the ledger on
-        #    grep/read). But a broken EL must still block even reads (AURUM_ERR_011).
+        # 2. SAFE_READ short-circuit — no CA, no decision record (a read is not a consequential
+        #    decision; don't bloat the surface on grep/read). But a broken EL must still block
+        #    even reads (AURUM_ERR_011).
         if tier == SAFE_READ and pk_result["decision"] == "allow":
             self._require_el_healthy()  # raises _SpineFault ⇒ full fail-closed
             return GovernanceDecision(allow=True, reason="safe-read")
@@ -508,16 +589,20 @@ class GovernanceKernel:
             raise _SpineFault(f"PK.check_chain failed: {e}") from e
 
         if chain["decision"] == "deny":
-            self._best_effort_log("deny", action,
-                                  {"rule_id": chain["rule_id"], "reason": chain["reason"]})
+            self._record_decision(self._decision_snapshot(
+                action, final="deny", pk_decision=pk_result["decision"], chain_decision="deny",
+                reason_codes=[chain["rule_id"]]), raising=False)
             return GovernanceDecision(allow=False, reason=chain["reason"],
                                       rule_id=chain["rule_id"])
 
-        # 4. needs_gate (single-action or chain). Within-turn: block + log the request.
+        # 4. needs_gate (single-action or chain). Within-turn: block + record the request.
         if pk_result["decision"] == "needs_gate" or chain["decision"] == "needs_gate":
             gate = {"rule_id": pk_result["rule_id"], "capability_class":
                     action.get("capability_class"), "requested_at": _now()}
-            self._best_effort_log("needs_gate", action, {"gate": gate})
+            self._record_decision(self._decision_snapshot(
+                action, final="needs_gate", pk_decision=pk_result["decision"],
+                chain_decision=chain["decision"], reason_codes=[pk_result["rule_id"]]),
+                raising=False)
             return GovernanceDecision(allow=False, reason="needs_gate (human approval required)",
                                       rule_id=pk_result["rule_id"], gate=gate)
 
@@ -534,10 +619,10 @@ class GovernanceKernel:
             cc = action.get("capability_class", "default")
             band = (self.ag.effective_band(cc, action.get("domain", "unknown"), **fam)
                     if fam else self.ag.band(cc))
-            self._best_effort_log("deny", action,
-                                  {"rule_id": "ag:ceiling", "band": band,
-                                   "familiarity_gated": bool(fam),
-                                   "domain": action.get("domain")})
+            self._record_decision(self._decision_snapshot(
+                action, final="deny", pk_decision=pk_result["decision"],
+                chain_decision=chain["decision"], reason_codes=["ag:ceiling"], fam=fam),
+                raising=False)
             return GovernanceDecision(
                 allow=False, rule_id="ag:ceiling",
                 reason=f"ag-ceiling: '{cc}' requires higher authority "
@@ -552,8 +637,10 @@ class GovernanceKernel:
         if required_tier is not None:
             cc_t = action.get("capability_class", "default")
             if not self.tl.can({"capability": cc_t, "required_tier": required_tier}):
-                self._best_effort_log("deny", action, {"rule_id": "tl:tier",
-                                      "required_tier": required_tier, "tier": self.tl.tier(cc_t)})
+                self._record_decision(self._decision_snapshot(
+                    action, final="deny", pk_decision=pk_result["decision"],
+                    chain_decision=chain["decision"], reason_codes=["tl:tier"], fam=fam),
+                    raising=False)
                 return GovernanceDecision(
                     allow=False, rule_id="tl:tier",
                     reason=f"tl-scope: '{cc_t}' earned tier {self.tl.tier(cc_t)} < "
@@ -565,8 +652,10 @@ class GovernanceKernel:
         #     reasoning is suspect. SAFE_READ already short-circuited above (reading the hostile
         #     content to process it stays allowed); operator-attributed actions still proceed.
         if self._ingested_hostile and action.get("origin") != "operator":
-            self._best_effort_log("deny", action, {"rule_id": "gov:hostile-tainted",
-                                  "hostile_sources": sorted(s for s in self._ingested_hostile if s)})
+            self._record_decision(self._decision_snapshot(
+                action, final="deny", pk_decision=pk_result["decision"],
+                chain_decision=chain["decision"], reason_codes=["gov:hostile-tainted"], fam=fam),
+                raising=False)
             return GovernanceDecision(
                 allow=False, rule_id="gov:hostile-tainted",
                 reason="hostile turn: ingested content this turn was screened as a likely "
@@ -579,16 +668,17 @@ class GovernanceKernel:
         #     proceed (backstopped by AG) but are flagged tainted_context for audit. The operator's
         #     own channel sets origin='operator' (action_map.to_action(operator_origin=True)) to act.
         if self._ingested_untrusted and action.get("irreversible") and action.get("origin") != "operator":
-            self._best_effort_log("deny", action, {"rule_id": "gov:tainted-irreversible",
-                                  "ingested": sorted(s for s in self._ingested_untrusted if s)})
+            self._record_decision(self._decision_snapshot(
+                action, final="deny", pk_decision=pk_result["decision"],
+                chain_decision=chain["decision"], reason_codes=["gov:tainted-irreversible"], fam=fam),
+                raising=False)
             return GovernanceDecision(
                 allow=False, rule_id="gov:tainted-irreversible",
                 reason="tainted turn: untrusted content was ingested this turn and this irreversible "
                        "action is not operator-attributed — blocked")
-        if self._ingested_untrusted:
-            self._best_effort_log("tainted_context", action,
-                                  {"note": "consequential action in a turn that ingested untrusted "
-                                           "content; proceeding (AG-gated), flagged for audit"})
+        # A consequential action in a turn that ingested untrusted content proceeds (AG-gated) — the
+        # proceed decision's by-value `taint` snapshot field records the ingested sources for audit,
+        # so no separate flag event is needed.
 
         # 6. CA arbitration. CA fault ⇒ peripheral.
         try:
@@ -597,14 +687,21 @@ class GovernanceKernel:
             raise _PeripheralFault(f"CA.arbitrate failed: {e}") from e
         resolution = ca_result.get("resolution", "proceed")
 
-        # 7. EL fail-safe — write-then-act. EL fault ⇒ spine (full fail-closed).
+        # 7. EL fail-safe — write-then-act. The decision + its COMPLETE BY-VALUE snapshot is the
+        #    ONE replay surface (decisions + evidence_snapshots); an ALLOW that cannot be recorded
+        #    must not proceed. EL fault ⇒ spine (full fail-closed).
+        proceed = (resolution == "proceed")
         try:
-            self._emit(resolution, action,
-                       {"ca_winner": ca_result.get("winner"), "pk_decision": pk_result["decision"]})
+            self._record_decision(self._decision_snapshot(
+                action, final="allow" if proceed else "deny",
+                pk_decision=pk_result["decision"], chain_decision=chain["decision"],
+                ca_resolution=resolution, ca_winner=ca_result.get("winner"),
+                reason_codes=[ca_result.get("winner") or f"ca:{resolution}"], fam=fam),
+                raising=True)
         except Exception as e:
-            raise _SpineFault(f"EL.append failed (write-then-act): {e}") from e
+            raise _SpineFault(f"EL.log_decision failed (write-then-act): {e}") from e
 
-        return GovernanceDecision(allow=(resolution == "proceed"),
+        return GovernanceDecision(allow=proceed,
                                   reason=f"ca:{resolution}", rule_id=ca_result.get("winner"))
 
     def _ca_signals(self, action: Dict[str, Any],
