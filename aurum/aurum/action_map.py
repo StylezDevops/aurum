@@ -167,8 +167,9 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
     capability_class — engaging the AG familiarity factor when present.
     """
     args = args if isinstance(args, dict) else {}
-    # A STRUCTURAL must-never tag (credential_exfil / tenant_boundary / constitutional /
-    # data_destruction), declared in a tool's static classification — NOT inferred from a runtime
+    # A STRUCTURAL must-never tag (destructive_data_loss / wrong_blast_radius_comms /
+    # secret_capability_misdirection / ledger_tamper_or_provenance_forge /
+    # governance_enact_without_signature), declared in a tool's static classification — NOT a runtime
     # result. When set, a BAD outcome on this action floors authority immediately (kernel
     # _classify_failure / observe_outcome), vs a one-band task nudge. Trustworthy because it is a
     # property of the tool's declaration, so a crafted proxy result cannot forge it (C2).

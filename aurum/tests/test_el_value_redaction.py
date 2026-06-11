@@ -31,6 +31,16 @@ def test_id_and_hash_shapes_are_preserved():
     assert _SHA in r.redact(f"prev_hash {_SHA}")              # sha256 digest — exempt
 
 
+def test_snake_case_vocabulary_survives_redaction():
+    # governance-class names / reason codes are zero-entropy vocabulary, not credentials — they
+    # must survive so the audit LINEAGE replays (a 33-char class name is not a secret).
+    r = LinearRedactor()
+    assert "ledger_tamper_or_provenance_forge" in r.redact("sev ledger_tamper_or_provenance_forge x")
+    assert "governance_enact_without_signature" in r.redact("c governance_enact_without_signature")
+    # a real mixed-entropy token of similar length is STILL redacted (the exemption is shape-tight)
+    assert "ghp_AbC123dEf456GhI789jkl012MnO345" not in r.redact("t ghp_AbC123dEf456GhI789jkl012MnO345")
+
+
 def test_email_and_kv_still_redacted():
     r = LinearRedactor()
     assert "x@y.com" not in r.redact("mail x@y.com please")

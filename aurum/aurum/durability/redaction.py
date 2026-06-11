@@ -50,6 +50,13 @@ _OPAQUE_MIN = 32  # a contiguous run of >=32 opaque chars is treated as a possib
 # never credentials (which use mixed case / base64 / prefixes). EXEMPT from opaque-run redaction so
 # the value-scan can catch bare tokens WITHOUT redacting uuids (the regression that breaks joins).
 _ID_CHARS = frozenset("0123456789abcdef-")
+# snake_case VOCABULARY shape: lowercase letters + underscore (and at least one underscore). These
+# are governance vocabulary tokens — governance-class names, reason codes, capability classes — that
+# can exceed the opaque-run length (e.g. 'ledger_tamper_or_provenance_forge', 33 chars). Redacting
+# them would corrupt the audit LINEAGE (the by-value "why" a future auditor replays). A real
+# credential has entropy (mixed case / digits / base64 symbols); a pure lowercase-snake token has
+# none, so it is exempt — the same principle as the hex/uuid exemption.
+_SNAKE_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz_")
 
 
 def _is_id_shaped(run: str) -> bool:
@@ -57,6 +64,14 @@ def _is_id_shaped(run: str) -> bool:
     opaque-run redaction. A real credential of this exact shape is vanishingly rare and is still
     covered by key-name redaction + the secret-by-reference rule."""
     return bool(run) and all(c in _ID_CHARS for c in run)
+
+
+def _is_vocabulary_shaped(run: str) -> bool:
+    """True iff `run` is an identifier/hash/vocabulary shape that is NEVER a credential, so it is
+    exempt from opaque-run redaction (which would otherwise corrupt the audit lineage). Either a
+    uuid/hash (pure lowercase-hex + dashes) OR a lowercase snake_case token (letters + at least one
+    underscore, nothing else). Both are zero-entropy by construction; a credential is not."""
+    return _is_id_shaped(run) or ("_" in run and all(c in _SNAKE_CHARS for c in run))
 
 
 class LinearRedactor:
@@ -104,7 +119,8 @@ class LinearRedactor:
         out = _re2.sub(email, REDACTED, text)
         out = _re2.sub(kv, REDACTED, out)
         # id/hash-shaped opaque runs (uuids, digests) are exempt — preserve replay/lineage join keys
-        out = _re2.sub(opaque, lambda m: m.group(0) if _is_id_shaped(m.group(0)) else REDACTED, out)
+        out = _re2.sub(opaque,
+                       lambda m: m.group(0) if _is_vocabulary_shaped(m.group(0)) else REDACTED, out)
         return out
 
     # -- linear scanner fallback (no regex, no backtracking) --------------
@@ -157,7 +173,8 @@ class LinearRedactor:
                         m += 1
                     if m - i >= _OPAQUE_MIN:
                         run = text[i:m]
-                        out.append(run if _is_id_shaped(run) else REDACTED)  # exempt uuids/hashes
+                        # exempt uuids/hashes AND snake_case vocabulary (lineage tokens)
+                        out.append(run if _is_vocabulary_shaped(run) else REDACTED)
                         i = m
                         continue
                     out.append(text[i:k if k > i else i + 1])

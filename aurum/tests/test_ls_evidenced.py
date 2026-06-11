@@ -82,10 +82,10 @@ def test_governance_gaps_surfaces_recurring_unstopped_breach():
     el = _el()
     ls = _ls(el=el)
     for _ in range(3):
-        _demote(el, "credential_exfil")            # a 'must never' that keeps happening post-hoc
-    _demote(el, "tenant_boundary")                 # only once → below the recurrence threshold
+        _demote(el, "secret_capability_misdirection")  # a 'must never' that keeps happening post-hoc
+    _demote(el, "destructive_data_loss")           # only once → below the recurrence threshold
     gaps = ls.governance_gaps(min_recurrence=3)
-    assert [g["class"] for g in gaps] == ["credential_exfil"]
+    assert [g["class"] for g in gaps] == ["secret_capability_misdirection"]
     assert gaps[0]["occurrences"] == 3
     assert "pre-hoc gate" in gaps[0]["question"]
     # the gap is audited to EL for owner review
