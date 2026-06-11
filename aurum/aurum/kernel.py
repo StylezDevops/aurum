@@ -40,10 +40,11 @@ import hashlib
 import json
 import os
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 from .action_map import DEFAULT_AG_BASELINE, SAFE_READ, risk_tier
 from .arbitration.conflict_arbiter import ConflictArbiter
@@ -110,6 +111,13 @@ def default_rules() -> List[Dict[str, Any]]:
 _GOVERNANCE_FAILURE_CLASSES: frozenset = frozenset({
     "credential_exfil", "tenant_boundary", "constitutional", "data_destruction",
 })
+
+# Bound on the within-turn chain log (H2). new_turn() resets it at a turn boundary; this cap is a
+# defence for a LONG-LIVED host kernel that doesn't (the cage gets the reset free via process
+# death per message). Without it, _action_log grows unbounded across turns → check_chain goes
+# O(n²) over a session + monotonic memory. A real turn never has this many consequential actions,
+# so the bound is invisible in normal operation and only clips a pathological/abusive run.
+_ACTION_LOG_MAX = 256
 
 
 class GovernanceKernel:
@@ -197,8 +205,9 @@ class GovernanceKernel:
         # Lazily-built, CACHED maintenance scheduler (see run_maintenance) — cached so SCHEDULE
         # interval gating holds across calls in a long-lived kernel. None until first use.
         self._maintenance_scheduler: Any = None
-        # Per-process accumulated actions for within-turn chain analysis (007/009).
-        self._action_log: List[Dict[str, Any]] = []
+        # Per-process accumulated EXECUTED actions for within-turn chain analysis (007/009).
+        # Bounded (H2) so a long-lived host kernel that misses a new_turn() can't grow it unbounded.
+        self._action_log: Deque[Dict[str, Any]] = deque(maxlen=_ACTION_LOG_MAX)
         # Usage evidence on the severity rules: how often each failure class actually fires.
         # A class that never fires is a candidate for review (dead/redundant); a hot one is
         # load-bearing. The concrete first instance of "rules are themselves evidenced".
@@ -588,9 +597,12 @@ class GovernanceKernel:
             return GovernanceDecision(allow=True, reason="safe-read")
 
         # 3. Chain check — within-turn padding-resistant taint (007/009). PK fault ⇒ spine.
+        #    M1: evaluate over the persisted (EXECUTED) actions PLUS this candidate, but do NOT
+        #    persist the candidate yet — only an ALLOWED action joins _action_log (step 7). A
+        #    blocked attempt must not pollute the taint chain for subsequent actions this turn (a
+        #    denied secret-read never touched the data, so it can't complete an exfil path later).
         try:
-            self._action_log.append(action)
-            chain = self.pk.check_chain(self._action_log, {})
+            chain = self.pk.check_chain([*self._action_log, action], {})
         except Exception as e:
             raise _SpineFault(f"PK.check_chain failed: {e}") from e
 
@@ -707,6 +719,8 @@ class GovernanceKernel:
         except Exception as e:
             raise _SpineFault(f"EL.log_decision failed (write-then-act): {e}") from e
 
+        if proceed:
+            self._action_log.append(action)   # only EXECUTED actions persist in the taint chain (M1)
         return GovernanceDecision(allow=proceed,
                                   reason=f"ca:{resolution}", rule_id=ca_result.get("winner"))
 
@@ -966,6 +980,11 @@ class GovernanceKernel:
         gv = task_result.get("governance_violation")
         if isinstance(gv, str) and gv in _GOVERNANCE_FAILURE_CLASSES:
             return "governance", gv
+        # STRUCTURAL must-never tag carried on the ACTION (set at to_action from the tool's static
+        # classification — NOT the proxy result, so a crafted tool result cannot forge a floor).
+        agc = action.get("governance_class")
+        if isinstance(agc, str) and agc in _GOVERNANCE_FAILURE_CLASSES:
+            return "governance", agc
         # OI preference-violation signals naming a governance class also escalate
         for v in (verdict.get("signals", {}) or {}).get("preference_violations", []) or []:
             if isinstance(v, str) and v in _GOVERNANCE_FAILURE_CLASSES:

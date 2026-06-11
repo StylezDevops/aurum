@@ -253,11 +253,36 @@ class AuthorityGovernor:
         env = self._resolve_env(environment)
         value = max(self._k["floor"], _clamp01(value))
         prev = self._authority.get(capability_class)
+        # Snapshot the in-memory state so the move can be UNDONE if the durable audit fails (H1).
+        _snap_band = self._band_idx.get(capability_class)
+        _snap_earned = list(self._earned_in.get(capability_class, []))
+        _snap_promote = self._last_promote.get(capability_class)
         self._authority[capability_class] = value
         self._update_band(capability_class, value, now)
         self._record_env(capability_class, env)
         if prev != value:
-            self._audit(capability_class, value, env, prev=prev, cause=cause)
+            # ATOMIC with the in-memory move (H1): if the TRUST_CHANGE append fails, ROLL BACK so
+            # in-memory authority can never be left AHEAD of the ledger — that divergence held in
+            # this process but VANISHED on the next --rm rehydrate (a forgotten demote silently
+            # re-appearing as retained authority). Either both the move and its record happen, or
+            # neither. _audit must run AFTER the move (it logs the post-move band + earned_in).
+            try:
+                self._audit(capability_class, value, env, prev=prev, cause=cause)
+            except Exception:
+                if prev is None:
+                    self._authority.pop(capability_class, None)
+                else:
+                    self._authority[capability_class] = prev
+                if _snap_band is None:
+                    self._band_idx.pop(capability_class, None)
+                else:
+                    self._band_idx[capability_class] = _snap_band
+                self._earned_in[capability_class] = _snap_earned
+                if _snap_promote is None:
+                    self._last_promote.pop(capability_class, None)
+                else:
+                    self._last_promote[capability_class] = _snap_promote
+                raise
 
     def apply_outcome(self, capability_class: str, *, good: bool, grounded: bool,
                       environment: Optional[str] = None, severity: str = "task",
