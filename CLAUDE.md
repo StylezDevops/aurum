@@ -27,6 +27,18 @@ replayable. Best isolation + best capability + enforced restraint, one codebase,
   `/setup`). Neutral default — **do NOT default to "Robbie"** (used elsewhere).
 - **v1 ship gate:** (1) 24KR release-pipeline integration, (2) Gmail + 2FA capture.
   Memory/headroom-by-default and social media are wired but deferred to later phases.
+- **Authority model — v1 is asymmetric, and that asymmetry is the differentiator.** Most systems
+  start by automating trust GROWTH; Aurum starts by automating trust LOSS. Authority CONTRACTION
+  is automatic (a proxy failure reflexively demotes — `observe_outcome`); authority EXPANSION
+  requires a human-grounded outcome that is cryptographically VERIFIABLE — an ed25519-signed
+  operator verdict, the operator holding the private key OUTSIDE the cage
+  (`submit_operator_verdict` → `integrations/operator_verdict.py`; sign with
+  `scripts/sign_operator_verdict.py`). No operator key deployed ⇒ no promotion is possible ⇒
+  contraction-only (the default-safe posture). Every promotion is attributable by value
+  (authority↑ *because* verdict V *signed by* operator K) — governance provenance, not just a
+  score. Roadmap: **v1** automatic contraction + signed-human expansion; **v2** limited
+  evidence-backed expansion; **v3** studied expansion dynamics. The decision/snapshot ledger is
+  the institutional memory the score is a compression of.
 
 ## Architecture
 
