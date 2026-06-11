@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 _GOV = {"capability_class": "file_write", "action_class": "commit_outward",
-        "risk_tier": "consequential", "governance_class": "data_destruction"}
+        "risk_tier": "consequential", "governance_class": "destructive_data_loss"}
 
 
 # ── C2: a structural must-never tag floors authority — even on a proxy-"satisfied" outcome ─────
