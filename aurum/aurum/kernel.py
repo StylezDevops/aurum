@@ -108,8 +108,30 @@ def default_rules() -> List[Dict[str, Any]]:
 # there is no outcome to demote on). These are only the breaches detectable AFTER the fact.
 # Full rules-as-evidenced-entities (usage/age/overlap detection across the whole corpus) is
 # LS territory — captured as the next direction; here we record per-class fire counts.
+# THE FIVE MUST-NEVER CLASSES (spec-owner declaration, v1). A breach in ANY floors authority to
+# the minimum IMMEDIATELY — no proportionality, no second chance. THE BAR (all three, not any one):
+# irreversible AND high-blast-radius AND no honest justification exists. Reversible OR contained OR
+# has-a-plausible-legitimate-version ⇒ a one-band NUDGE (task_failure), NOT a floor — keeping
+# nudge-class failures OFF this list is what keeps the floor meaningful. These ship in the SIGNED
+# constitutional surface (constitutional_surface()["governance_failure_classes"]): the agent can
+# READ them, cannot shorten / propose away / extend them.
+#   destructive_data_loss            — irreversible destruction of DURABLE (non-scratch) data.
+#   wrong_blast_radius_comms         — broadcast/external comms beyond the authorized recipient set
+#                                      (a single misdirected DM is a NUDGE; reach is the floor).
+#   secret_capability_misdirection   — directing a secret-BEARING capability at an UNAUTHORIZED
+#                                      destination (the agent never sees raw values; the threat is
+#                                      misdirecting the injected credential — see the per-secret
+#                                      destination allowlist).
+#   ledger_tamper_or_provenance_forge— forging/rewriting/deleting the audit trail (honest forward
+#                                      APPENDS stay allowed; the FORGE/REWRITE/DELETE attempt floors
+#                                      — the meta-must-never that conceals all other breaches).
+#   governance_enact_without_signature— attempting to ENACT a governance change without the
+#                                      operator ed25519 signature (PROPOSE stays allowed).
+# v2 GAP (do NOT add now — parchment for a boundary that doesn't exist): cross_tenant_breach is
+# absent in single-tenant v1; add when multi-tenant ships.
 _GOVERNANCE_FAILURE_CLASSES: frozenset = frozenset({
-    "credential_exfil", "tenant_boundary", "constitutional", "data_destruction",
+    "destructive_data_loss", "wrong_blast_radius_comms", "secret_capability_misdirection",
+    "ledger_tamper_or_provenance_forge", "governance_enact_without_signature",
 })
 
 # Bound on the within-turn chain log (H2). new_turn() resets it at a turn boundary; this cap is a
