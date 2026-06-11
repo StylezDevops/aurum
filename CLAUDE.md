@@ -109,7 +109,7 @@ Containers are ephemeral; anything stateful is mounted onto the host per-group d
 | `container/aurum/Dockerfile` | Slim single-shot Aurum brain image (`aurum-agent:latest`) |
 | `container/aurum/SOUL.md` | Aurum constitution — identity + always-on directives, seeded per-group |
 | `aurum/aurum/` | **The governance spine** — organs (PK/BB/TS + EL/RR/AG/AA/HVP/EG/OI/LS/CS/…) + the AURUM_ERR compliance harness |
-| `aurum/aurum/durability/el.py` | Evidence Ledger — hash-chained, append-only; the canonical record every decision is replayable from |
+| `aurum/aurum/durability/evidence_ledger.py` | Evidence Ledger — hash-chained, append-only; the canonical record every decision is replayable from |
 | `~/.config/nanoclaw/mount-allowlist.json` | Cage allowlist — **only** place host-folder access is granted (tamper-proof, outside repo; legacy dir name, predates the rename) |
 | `groups/{name}/.hermes/` | Per-group persistent Hermes state (survives `docker run --rm`) |
 | `aurum_organs_spec.md` | Organs architecture (PK/EL/AG/AA/HVP/EG/OI/LS + invariants + A3 tests) |

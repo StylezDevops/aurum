@@ -19,11 +19,11 @@ from datetime import datetime, timezone
 import pytest
 
 from aurum.build_state import is_built
-from aurum.arbitration.ca import ConflictArbiter, ArbitrationError
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.rr import ReproducibilityRunner
-from aurum.novel.ag import AuthorityGovernor
-from aurum.spine.pk import PolicyKernel
+from aurum.arbitration.conflict_arbiter import ConflictArbiter, ArbitrationError
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.reproducibility_runner import ReproducibilityRunner
+from aurum.novel.authority_governor import AuthorityGovernor
+from aurum.spine.policy_kernel import PolicyKernel
 
 pytestmark = pytest.mark.skipif(
     not is_built("PK", "AG", "CA", "EL", "RR"),

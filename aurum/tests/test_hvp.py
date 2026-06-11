@@ -6,8 +6,8 @@ import tempfile
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
-from aurum.novel.hvp import HeterogeneousVerifierPanel, HVPRoutingError
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.novel.heterogeneous_verifier_panel import HeterogeneousVerifierPanel, HVPRoutingError
 
 
 def _entry(id, family, cost_class=2, trust_tier=2, sees_sensitive=True):

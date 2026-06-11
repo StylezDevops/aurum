@@ -1,5 +1,5 @@
 # =============================================================================
-# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/ts.py (TS).
+# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/toolsmith.py (TS).
 # Still RUNS in the container today, but this is a DONOR: migrate its logic INTO the
 # scaffold TS organ; do NOT extend it here as if it were the organ. A future session
 # builds TS in the scaffold, not in this file. build_state.BUILT['TS'] stays False

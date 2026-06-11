@@ -6,9 +6,9 @@ import tempfile
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.kve import KnowledgeValidityEngine
-from aurum.durability.mgc import MemoryGarbageCollector
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.knowledge_validity_engine import KnowledgeValidityEngine
+from aurum.durability.memory_garbage_collector import MemoryGarbageCollector
 
 DAY = 86400.0
 

@@ -14,9 +14,9 @@ import pytest
 
 from aurum.build_state import is_built
 from aurum.durability.clock import DAY
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 from aurum.institutional import ForcedContestability
-from aurum.novel.ag import AuthorityGovernor
+from aurum.novel.authority_governor import AuthorityGovernor
 
 pytestmark = pytest.mark.skipif(not is_built("FC"), reason="FC not built")
 

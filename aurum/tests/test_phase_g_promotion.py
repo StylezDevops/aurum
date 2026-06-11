@@ -3,8 +3,8 @@ to the domain's substrate (cross-/unmapped rejected pre-gate), then a skill prom
 transitive dependents' goldens (blocked on any red). A cleared proposal still faces the HUMAN_GATE."""
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.action_map import to_action
-from aurum.extensions.sdg import SkillDependencyGraph
-from aurum.extensions.sm import SubstrateMapper
+from aurum.extensions.skill_dependency_graph import SkillDependencyGraph
+from aurum.extensions.substrate_mapper import SubstrateMapper
 from aurum.kernel import GovernanceKernel
 
 

@@ -10,7 +10,7 @@ import pytest
 from aurum.build_state import is_built
 from aurum.durability.redaction import LinearRedactor
 from aurum.kernel import GovernanceKernel
-from aurum.spine.pk import PolicyKernel
+from aurum.spine.policy_kernel import PolicyKernel
 
 _TOKEN = "ghp_AbC123dEf456GhI789jkl012MnO345pqRsT"   # 40-char mixed-case token (a real secret shape)
 _UUID = "a825cfb3bf0b72eb6c4d5e6f70819a2b"           # uuid4().hex — 32 lowercase hex (an id)

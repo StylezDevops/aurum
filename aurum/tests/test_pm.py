@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.pm import PreferenceModel
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.preference_model import PreferenceModel
 
 
 def _pm(**kw):

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import threading
 
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 
 
 def _ev(n: int, i: int) -> dict:

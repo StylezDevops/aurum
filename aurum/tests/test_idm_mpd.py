@@ -10,9 +10,9 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
-from aurum.observability.idm import IdentityDriftMonitor
-from aurum.observability.mpd import MemoryPoisoningDetector
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.observability.identity_drift_monitor import IdentityDriftMonitor
+from aurum.observability.memory_poisoning_detector import MemoryPoisoningDetector
 
 
 def _el():

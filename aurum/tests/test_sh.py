@@ -2,7 +2,7 @@
 gated by an 'ok' verdict and consumes it (no replay)."""
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.build_state import is_built
-from aurum.support.sh import ShadowMode
+from aurum.support.shadow_mode import ShadowMode
 
 
 def _deploy_action():

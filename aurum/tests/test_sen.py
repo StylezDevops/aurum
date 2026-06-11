@@ -7,8 +7,8 @@ from __future__ import annotations
 import pytest
 
 from aurum.build_state import is_built
-from aurum.spine.pk import PolicyKernel
-from aurum.support.sen import UNTRUSTED, Sensorium
+from aurum.spine.policy_kernel import PolicyKernel
+from aurum.support.sensorium import UNTRUSTED, Sensorium
 
 
 def test_watch_registers_and_dispatches():

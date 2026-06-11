@@ -6,7 +6,7 @@ outward op never fires (the H2 containment property)."""
 from aurum.action_map import to_action
 from aurum.durability.clock import DomainClock
 from aurum.kernel import GovernanceKernel
-from aurum.support.sh import ShadowMode
+from aurum.support.shadow_mode import ShadowMode
 
 _IRREV = {"capability_class": "network", "action_class": "commit_outward",
           "risk_tier": "consequential", "irreversible": True}

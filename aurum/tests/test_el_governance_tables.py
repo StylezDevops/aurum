@@ -13,7 +13,7 @@ import os
 import sqlite3
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 
 
 def _el():

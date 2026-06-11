@@ -45,23 +45,23 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .action_map import DEFAULT_AG_BASELINE, SAFE_READ, risk_tier
-from .arbitration.ca import ConflictArbiter
+from .arbitration.conflict_arbiter import ConflictArbiter
 from .durability.clock import RealDomainClock
-from .durability.el import EvidenceLedger
-from .durability.kve import KnowledgeValidityEngine
-from .extensions.sdg import SkillDependencyGraph
+from .durability.evidence_ledger import EvidenceLedger
+from .durability.knowledge_validity_engine import KnowledgeValidityEngine
+from .extensions.skill_dependency_graph import SkillDependencyGraph
 from .integrations.identity import IdentityScopeMapper
-from .extensions.sm import SubstrateMapper
-from .observability.cc import ConcentrationCheck
-from .observability.mpd import MemoryPoisoningDetector
-from .novel.ag import AuthorityGovernor
-from .novel.oi import OutcomeInterpreter
-from .spine.bb import BlackBox
-from .spine.pk import PolicyKernel
-from .support.rs import ResourceScheduler
-from .support.sen import Sensorium
-from .support.sh import ShadowMode
-from .support.tl import TrustLadder
+from .extensions.substrate_mapper import SubstrateMapper
+from .observability.concentration_check import ConcentrationCheck
+from .observability.memory_poisoning_detector import MemoryPoisoningDetector
+from .novel.authority_governor import AuthorityGovernor
+from .novel.outcome_interpreter import OutcomeInterpreter
+from .spine.black_box import BlackBox
+from .spine.policy_kernel import PolicyKernel
+from .support.resource_scheduler import ResourceScheduler
+from .support.sensorium import Sensorium
+from .support.shadow_mode import ShadowMode
+from .support.trust_ladder import TrustLadder
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ class GovernanceKernel:
         these IS a constitutional change — it must be re-ratified out of band, or the next boot
         fails closed. The cage can PROPOSE a change (write a proposal); it cannot ENACT one (it has
         no private key)."""
-        from .novel.ag import _BANDS as _AG_BANDS
+        from .novel.authority_governor import _BANDS as _AG_BANDS
         return {
             "ag_bands": [[n, p, d] for (n, p, d) in _AG_BANDS],
             "ag_kinetics": dict(self.ag.kinetics()),
