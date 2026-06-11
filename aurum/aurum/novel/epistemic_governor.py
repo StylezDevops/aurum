@@ -129,11 +129,17 @@ class EpistemicGovernor:
         return min(branches, key=lambda b: b.get("U", b.get("projected_U", 1.0)))
 
     # -- calibration (validated against a holdout) -------------------------
-    def calibrate(self, history: Optional[List[Dict[str, Any]]] = None
-                  ) -> Dict[EGComponent, float]:
-        """Fit w1..w5 from EL failure history (samples of {components, failed}) so the
-        components that preceded failures carry more weight; VALIDATE on a holdout and
-        REJECT (keep prior weights) if it doesn't generalise. [HUMAN_GATE on change.]"""
+    def calibrate(self, history: Optional[List[Dict[str, Any]]] = None, *,
+                  human_ratified: bool = False) -> Dict[EGComponent, float]:
+        """Fit w1..w5 from EL failure history (samples of {components, failed}) so the components
+        that preceded failures carry more weight; VALIDATE on a holdout and REJECT (keep prior
+        weights) if it doesn't generalise.
+
+        M4 HARD CONSTRAINT — PROPOSE-ONLY by default: the system MUST NOT auto-apply a weight/
+        threshold change. A self-tuning loss function optimises toward 'whatever fires least' — the
+        OPPOSITE of the declared direction; evidence finds the optimum GIVEN the human's direction,
+        it never CHOOSES the loss function. So calibrate returns the PROPOSED weights and applies
+        them ONLY when human_ratified=True (the propose-then-ratify asymmetry, same as #104)."""
         samples = history if history is not None else self._history_from_el()
         if len(samples) < 4:
             return dict(self.weights)  # not enough evidence — keep prior
@@ -142,10 +148,11 @@ class EpistemicGovernor:
         candidate = self._fit_weights(fit)
         if self._predictive_power(candidate, holdout) <= self._predictive_power(
                 self.weights, holdout):
-            return dict(self.weights)  # overfit / no generalisation — reject
-        self.weights = candidate
-        self._audit_calibrate(candidate)
-        return dict(candidate)  # type: ignore[return-value]
+            return dict(self.weights)  # overfit / no generalisation — reject (a no-op proposal)
+        if human_ratified:             # APPLY only on explicit human ratification
+            self.weights = candidate
+            self._audit_calibrate(candidate)
+        return dict(candidate)         # the PROPOSAL (applied above iff ratified)  # type: ignore[return-value]
 
     @staticmethod
     def _fit_weights(samples: List[Dict[str, Any]]) -> Dict[str, float]:
