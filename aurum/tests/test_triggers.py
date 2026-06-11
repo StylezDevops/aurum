@@ -14,7 +14,7 @@ from aurum.kernel import GovernanceKernel
 from aurum.observability.triggers import (
     DAY, EVENT, OPERATOR, SCHEDULE, TURN, GovernanceScheduler, default_governance_scheduler,
 )
-from aurum.support.rs import ResourceScheduler
+from aurum.support.resource_scheduler import ResourceScheduler
 
 
 def _sched(**kw):

@@ -4,7 +4,7 @@ tier-down, HUMAN_GATE past the ceiling, and can() as a pure tier check (scope, n
 import pytest
 
 from aurum.build_state import is_built
-from aurum.support.tl import TrustLadder
+from aurum.support.trust_ladder import TrustLadder
 
 
 def test_grounded_success_tiers_up_capped_at_ceiling():

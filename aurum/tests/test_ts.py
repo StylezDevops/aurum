@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from aurum.build_state import is_built
-from aurum.spine.ts import Toolsmith
+from aurum.spine.toolsmith import Toolsmith
 
 pytestmark = pytest.mark.skipif(
     not is_built("TS"), reason="TS not built yet"
@@ -195,7 +195,7 @@ def test_list_tools_filtered_by_state():
 # ---------------------------------------------------------------------------
 
 def test_ts_logs_to_el(tmp_path):
-    from aurum.durability.el import EvidenceLedger
+    from aurum.durability.evidence_ledger import EvidenceLedger
     el = EvidenceLedger(str(tmp_path / "el.db"))
     ts = _ts(el=el)
     spec = {"tool_id": "logged_tool"}

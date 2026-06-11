@@ -6,9 +6,9 @@ import tempfile
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.gr import GoalRegistry
-from aurum.novel.cs import CausalSimulator
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.goal_registry import GoalRegistry
+from aurum.novel.causal_simulator import CausalSimulator
 
 DAY = 24 * 3600.0
 WINDOW = 30 * DAY

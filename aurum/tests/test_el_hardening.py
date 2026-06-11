@@ -21,8 +21,8 @@ import pytest
 from aurum.durability.clock import (
     DAY, LAMBDA, DomainClock, decay, execution_now, half_life_lambda,
 )
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.el_writer import LedgerBackpressure, SerializedLedgerWriter
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.evidence_ledger_writer import LedgerBackpressure, SerializedLedgerWriter
 from aurum.durability.ratchet_mac import ForwardSecureMAC, random_boot_key, ratchet
 from aurum.durability.redaction import USES_NATIVE_RE, LinearRedactor
 from aurum.types import chain_link, content_hash
@@ -44,7 +44,7 @@ def _event(i: int) -> dict:
 
 def _chain_is_contiguous(events: list[dict]) -> bool:
     """events seq-ascending; each prev_hash must equal the prior event's hash (no fork)."""
-    from aurum.durability.el import GENESIS_HASH
+    from aurum.durability.evidence_ledger import GENESIS_HASH
     prev = GENESIS_HASH
     for e in events:
         if e["prev_hash"] != prev:

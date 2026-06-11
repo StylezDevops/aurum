@@ -10,9 +10,9 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.rr import ReproducibilityRunner
-from aurum.novel.cs import CausalSimulator
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.reproducibility_runner import ReproducibilityRunner
+from aurum.novel.causal_simulator import CausalSimulator
 
 
 def _el():

@@ -5,7 +5,7 @@ authority SCALAR is never dwell-gated. The kernel now threads its domain clock i
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
-from aurum.novel.ag import AuthorityGovernor
+from aurum.novel.authority_governor import AuthorityGovernor
 
 
 def test_promotion_dwell_holds_band_within_window_scalar_ungated():

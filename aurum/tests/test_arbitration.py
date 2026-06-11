@@ -4,9 +4,9 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.arbitration.ca import ConflictArbiter
-from aurum.arbitration.dd import DeadlockDetector
-from aurum.durability.el import EvidenceLedger
+from aurum.arbitration.conflict_arbiter import ConflictArbiter
+from aurum.arbitration.deadlock_detector import DeadlockDetector
+from aurum.durability.evidence_ledger import EvidenceLedger
 
 
 def _ca(el=None):

@@ -78,7 +78,7 @@ def content_hash(event: ELEvent) -> str:
     does not depend on the prior event, it can be computed OFF the single writer thread
     (process pool) — the CPU-bound `json.dumps` + `sha256` that would otherwise saturate
     one core under the GIL and back the ledger queue into LedgerBackpressure. See
-    durability/el_writer.py.
+    durability/evidence_ledger_writer.py.
     """
     serialized = json.dumps(
         {k: event[k] for k in sorted(event.keys()) if k not in ("hash", "prev_hash")},

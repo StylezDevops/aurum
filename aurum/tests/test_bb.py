@@ -6,7 +6,7 @@ import json
 import pytest
 
 from aurum.build_state import is_built
-from aurum.spine.bb import BlackBox, _sign
+from aurum.spine.black_box import BlackBox, _sign
 
 pytestmark = pytest.mark.skipif(
     not is_built("BB"), reason="BB not built yet"
@@ -126,7 +126,7 @@ def test_verify_on_load_quarantined_hidden_from_search():
 # ---------------------------------------------------------------------------
 
 def test_write_redacts_via_pk():
-    from aurum.spine.pk import PolicyKernel
+    from aurum.spine.policy_kernel import PolicyKernel
     pk = PolicyKernel()
     bb = _bb(pk=pk)
     pm_id = bb.write({"summary": "leak", "token": "super-secret-123"})

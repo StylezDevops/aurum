@@ -4,7 +4,7 @@ dependents; promotion is blocked on any red (incl. transitive)."""
 import pytest
 
 from aurum.build_state import is_built
-from aurum.extensions.sdg import SkillDependencyGraph
+from aurum.extensions.skill_dependency_graph import SkillDependencyGraph
 
 
 def _graph():

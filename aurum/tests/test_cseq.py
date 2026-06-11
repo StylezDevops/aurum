@@ -19,7 +19,7 @@ from aurum.cseq import (
     RouteObservation, classify, equilibrium_holds, governance_pressure_differential, ratify,
     canonical_surface_bytes, surface_hash,
 )
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 
 pytestmark = pytest.mark.skipif(not is_built("CSEQ"), reason="CSEQ not built")
 

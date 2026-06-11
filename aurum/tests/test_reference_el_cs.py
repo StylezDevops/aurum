@@ -11,8 +11,8 @@ import sqlite3
 import tempfile
 import time
 
-from aurum.durability.el import EvidenceLedger
-from aurum.novel.cs import CausalSimulator
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.novel.causal_simulator import CausalSimulator
 
 
 def _ev(oid, cc, organ="TS", at="PROMOTION"):

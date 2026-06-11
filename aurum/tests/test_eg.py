@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
-from aurum.novel.eg import EpistemicGovernor, _COMPONENTS
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.novel.epistemic_governor import EpistemicGovernor, _COMPONENTS
 
 
 def _el():

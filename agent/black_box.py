@@ -1,5 +1,5 @@
 # =============================================================================
-# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/bb.py (BB).
+# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/black_box.py (BB).
 # Still RUNS in the container today, but this is a DONOR: migrate its logic INTO the
 # scaffold BB organ; do NOT extend it here as if it were the organ. A future session
 # builds BB in the scaffold, not in this file. build_state.BUILT['BB'] stays False

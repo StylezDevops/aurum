@@ -269,7 +269,7 @@ def test_tampered_ledger_not_rehydrated(tmp_path):
     """The new obligation durable state creates: a ledger that fails verify_chain MUST NOT
     drive authority. Rehydration falls back to the low-trust baseline (fail-safe)."""
     from unittest import mock
-    from aurum.durability.el import EvidenceLedger
+    from aurum.durability.evidence_ledger import EvidenceLedger
     home = str(tmp_path)
     k1 = GovernanceKernel(home=home)
     k1.observe_outcome(to_action("write_file", {"path": "/x"}), {"completed": False})

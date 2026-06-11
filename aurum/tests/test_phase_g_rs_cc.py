@@ -3,8 +3,8 @@
 signal (the MGC do-not-retire / TCM harden-or-split feed) over the live EL."""
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.kernel import GovernanceKernel
-from aurum.observability.cc import ConcentrationCheck
-from aurum.support.rs import ResourceScheduler
+from aurum.observability.concentration_check import ConcentrationCheck
+from aurum.support.resource_scheduler import ResourceScheduler
 
 
 def _append(el, object_ids):

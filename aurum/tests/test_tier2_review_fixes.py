@@ -19,14 +19,14 @@ import pytest
 
 from aurum.action_map import to_action
 from aurum.build_state import is_built
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 from aurum.kernel import GovernanceKernel
 from aurum.mcp import McpRegistry
-from aurum.novel.ls import LivingSpecification
-from aurum.spine.bb import BlackBox
+from aurum.novel.living_specification import LivingSpecification
+from aurum.spine.black_box import BlackBox
 from aurum.support.injection_screen import HeuristicInjectionScreener
-from aurum.support.sh import ShadowMode
-from aurum.support.tl import TrustLadder
+from aurum.support.shadow_mode import ShadowMode
+from aurum.support.trust_ladder import TrustLadder
 
 pytestmark = pytest.mark.skipif(
     not is_built("PK", "EL", "AG", "CA", "BB", "TL", "SH", "LS"),

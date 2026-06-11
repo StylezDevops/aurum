@@ -16,13 +16,13 @@ import tempfile
 from types import SimpleNamespace
 
 from aurum.cseq import ConstitutionalStability, CostWeights, PathCost, RouteObservation
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.kve import KnowledgeValidityEngine
-from aurum.durability.mgc import MemoryGarbageCollector
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.knowledge_validity_engine import KnowledgeValidityEngine
+from aurum.durability.memory_garbage_collector import MemoryGarbageCollector
 from aurum.integrations.governed_http import GovernedHttpClient
 from aurum.sensors.gmail_2fa import MailboxReader
 from aurum.sensors.gmail_oauth import GmailApiReader
-from aurum.support.cb import CircuitBreaker
+from aurum.support.circuit_breaker import CircuitBreaker
 
 
 def _tmp(name):

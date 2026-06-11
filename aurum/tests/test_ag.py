@@ -6,8 +6,8 @@ import tempfile
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
-from aurum.novel.ag import AuthorityGovernor
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.novel.authority_governor import AuthorityGovernor
 
 
 def _ag(**kw):
