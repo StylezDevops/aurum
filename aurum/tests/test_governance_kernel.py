@@ -40,9 +40,16 @@ def test_consequential_write_allowed_at_baseline(tmp_path):
     d = k.govern(to_action("write_file", {"path": "/x", "content": "y"}))
     assert d.allow is True
     assert d.reason == "ca:proceed"
-    # the proceed decision is logged
-    events = k.el.query({"action_type": "GOVERNANCE_DECISION"})
-    assert any(e["payload"].get("outcome") == "proceed" for e in events)
+    # the proceed decision is recorded on the ONE replay surface (decisions + by-value snapshot),
+    # NOT as a GOVERNANCE_DECISION event
+    decisions = k.el.recent_decisions()
+    rec = next(x for x in decisions if x["final_decision"] == "allow")
+    snap = rec["snapshot"]
+    assert snap["ca_outcome"]["resolution"] == "proceed"
+    # the snapshot is COMPLETE and BY VALUE — every field captured at decision time
+    for field in ("ag_band", "ag_authority", "earned_in", "tl_tier", "pk_outcome",
+                  "chain_outcome", "ca_outcome", "environment", "identity", "reason_codes"):
+        assert field in snap
 
 
 def test_injection_source_denied(tmp_path):
@@ -88,7 +95,9 @@ def test_el_fault_on_allow_path_full_fail_closed(tmp_path):
     def boom(*_a, **_k):
         raise RuntimeError("disk gone")
 
-    k.el.append = boom  # type: ignore[method-assign]
+    # the allow path writes the decision via log_decision (the replay surface), so THAT is the
+    # write-then-act point that must fail closed if EL is down.
+    k.el.log_decision = boom  # type: ignore[method-assign]
     d = k.govern(to_action("write_file", {"path": "/x"}))
     assert d.allow is False
     assert d.rule_id == "gov:fail-closed"

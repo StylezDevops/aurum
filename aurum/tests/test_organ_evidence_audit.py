@@ -65,7 +65,7 @@ def test_fired_vs_instrumented_vs_silent(tmp_path):
     assert organs["CS"]["verdict"] == "SILENT" and organs["CS"]["authored"] == 0
     # Decision totals read from the events surface (the table the kernel actually writes).
     assert report["decisions"].get("deny") == 1
-    assert report["decisions"].get("proceed") == 1
+    assert report["decisions"].get("allow") == 1
 
 
 def test_audit_is_read_only_by_construction(tmp_path):

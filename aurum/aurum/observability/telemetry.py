@@ -22,12 +22,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-# GOVERNANCE_DECISION payload outcomes the kernel emits — named so the rate view reports a
-# stable schema even before any of a given kind has occurred (0, not absent).
-_OUTCOME_KINDS = (
-    "proceed", "deny", "needs_gate", "outcome_demote", "outcome_hold", "outcome_verdict",
+# Outcome kinds the rate view reports (stable schema: 0, not absent). Per-action DECISIONS
+# (allow|deny|needs_gate) come from the `decisions` table — the by-value replay surface; the
+# OUTCOME/health kinds (outcome_*, degraded, fail_closed, integrity_alarm) remain
+# GOVERNANCE_DECISION events. Two streams, one merged view.
+_DECISION_KINDS = ("allow", "deny", "needs_gate")
+_EVENT_OUTCOME_KINDS = (
+    "outcome_demote", "outcome_hold", "outcome_verdict",
     "degraded", "fail_closed", "integrity_alarm",
 )
+_OUTCOME_KINDS = _DECISION_KINDS + _EVENT_OUTCOME_KINDS
 
 
 def _parse_ts(ts: Any) -> Optional[datetime]:
@@ -60,13 +64,17 @@ class GovernanceTelemetry:
         """Counts of governance activity over the (optionally time-bounded) ledger, plus an
         events/day estimate from the observed time span. Cold/empty ledger → all-zero, never
         an error (clean no-op)."""
-        filters: Dict[str, Any] = {"action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}
-        if since is not None:
-            filters["since"] = since
-        decisions = self._k.el.query(filters)
-
         by_outcome: Dict[str, int] = {k: 0 for k in _OUTCOME_KINDS}
-        for ev in decisions:
+        # Per-action DECISIONS from the by-value replay surface (the `decisions` table).
+        decision_counts = self._k.el.decision_outcome_counts(since=since)
+        for final, n in decision_counts.items():
+            by_outcome[final] = by_outcome.get(final, 0) + n
+        n_decisions = sum(decision_counts.values())
+        # OUTCOME + health kinds remain GOVERNANCE_DECISION events (learning loop + fail-safe).
+        ev_filters: Dict[str, Any] = {"action_type": "GOVERNANCE_DECISION", "limit": 1_000_000}
+        if since is not None:
+            ev_filters["since"] = since
+        for ev in self._k.el.query(ev_filters):
             outcome = (ev.get("payload") or {}).get("outcome")
             if outcome is not None:
                 by_outcome[outcome] = by_outcome.get(outcome, 0) + 1
@@ -92,7 +100,7 @@ class GovernanceTelemetry:
                 per_day = round(len(events) / (span_s / 86400.0), 2)
 
         return {
-            "total_decisions": len(decisions),
+            "total_decisions": n_decisions,
             "total_events": len(events),
             "by_outcome": by_outcome,
             "by_action_type": by_action_type,

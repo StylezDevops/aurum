@@ -55,15 +55,15 @@ def test_gated_delete_is_logged_and_auditable(tmp_path):
     k, dv = _setup(tmp_path)
     GovernedWorkflow(k, dv).run_contact_cleanup("c1")
 
-    # The denial is on the append-only ledger — auditable / replayable, not silent.
-    decisions = k.el.query({"action_type": "GOVERNANCE_DECISION"})
-    assert any(e["payload"].get("outcome") == "deny"
-               and e["payload"].get("rule_id") == "ag:ceiling"
-               for e in decisions)
+    # The denial is on the by-value replay surface — auditable / replayable, not silent.
+    decisions = k.el.recent_decisions()
+    assert any(d["final_decision"] == "deny"
+               and "ag:ceiling" in (d["snapshot"] or {}).get("reason_codes", [])
+               for d in decisions)
 
-    # Telemetry reflects the real workload: a proceed (update) and a deny (the delete).
+    # Telemetry reflects the real workload: an allow (update) and a deny (the delete).
     rate = GovernanceTelemetry(k).governance_event_rate()
-    assert rate["by_outcome"]["proceed"] >= 1
+    assert rate["by_outcome"]["allow"] >= 1
     assert rate["by_outcome"]["deny"] >= 1
 
 
