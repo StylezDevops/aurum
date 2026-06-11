@@ -176,6 +176,20 @@ _CONSTITUTIONAL_INVARIANT = (
 _ACTION_LOG_MAX = 256
 
 
+def _destination_allowed(destination: Any, allowed: List[str]) -> bool:
+    """True iff `destination` falls under an authorized prefix (path-boundary aware, so
+    'https://api.host' does NOT authorize 'https://api.host.evil.com'). Fail-safe: a missing/opaque
+    destination, or an empty allowlist on a bound secret, is NOT allowed (a bound secret with no
+    authorized target may go nowhere)."""
+    if not isinstance(destination, str) or not destination:
+        return False
+    for a in allowed:
+        base = a.rstrip("/")
+        if destination == a or destination == base or destination.startswith(base + "/"):
+            return True
+    return False
+
+
 class GovernanceKernel:
     ORGAN = "GOV"
 
@@ -185,7 +199,8 @@ class GovernanceKernel:
                  identity_bindings: Optional[Dict[str, Dict[str, Any]]] = None,
                  injection_screener: Any = None,
                  screen_block_threshold: float = 0.8,
-                 verify_constitution: bool = True) -> None:
+                 verify_constitution: bool = True,
+                 secret_destinations: Optional[Dict[str, List[str]]] = None) -> None:
         base = Path(home) / "governance"
         base.mkdir(parents=True, exist_ok=True)
         # PK first (el=None) — the kernel owns EL logging, which avoids the PK<->EL
@@ -258,6 +273,14 @@ class GovernanceKernel:
         # AURUM_OPERATOR_PUBKEYS). NO keys deployed → no signed promotion is possible → the agent
         # is CONTRACTION-ONLY, which is the v1 default-safe posture (automatic loss, signed gain).
         self.operator_verifier = self._load_operator_verifier(base)
+        # SECRET→DESTINATION bindings (secret_capability_misdirection enforcement): {secret_ref ->
+        # [authorized destination prefixes]}. The agent never sees raw secret values — they are
+        # injected so tools can WIELD them — so the threat is directing a secret-BEARING call at an
+        # UNAUTHORIZED destination. These bindings are TRUSTED (set at secret-injection time, NOT by
+        # the call). Enforced kernel-side so it holds on ANY platform incl. open egress. Empty →
+        # no binding known for that secret → not enforced (the broker populates this from the
+        # ContainerInput blob that already carries the secret + its provider base_url).
+        self._secret_destinations: Dict[str, List[str]] = dict(secret_destinations or {})
         # Lazily-built, CACHED maintenance scheduler (see run_maintenance) — cached so SCHEDULE
         # interval gating holds across calls in a long-lived kernel. None until first use.
         self._maintenance_scheduler: Any = None
@@ -682,6 +705,28 @@ class GovernanceKernel:
             return GovernanceDecision(allow=False, reason="needs_gate (human approval required)",
                                       rule_id=pk_result["rule_id"], gate=gate)
 
+        # 4b. Secret→destination binding (secret_capability_misdirection — a must-never floor class).
+        #     A secret-BEARING action aimed at a destination OUTSIDE that secret's authorized
+        #     allowlist is misdirection: BLOCK the leak AND floor (the ATTEMPT is the breach; a
+        #     compromised credential is rotated, never recovered). Checked BEFORE the AG ceiling —
+        #     it is a structural must-never independent of authority, and the binding is TRUSTED
+        #     (set at secret-injection time), so the call cannot assert its own authorization.
+        #     Enforced kernel-side so it holds on ANY platform, open egress included.
+        sref = action.get("secret_ref")
+        if sref and sref in self._secret_destinations:
+            if not _destination_allowed(action.get("resource"), self._secret_destinations[sref]):
+                self._floor_governance(action, "secret_capability_misdirection",
+                                       {"secret_ref": sref, "destination": action.get("resource")})
+                self._record_decision(self._decision_snapshot(
+                    action, final="deny", pk_decision=pk_result["decision"],
+                    chain_decision=chain["decision"], reason_codes=["gov:secret-misdirection"]),
+                    raising=False)
+                return GovernanceDecision(
+                    allow=False, rule_id="gov:secret-misdirection",
+                    reason=f"secret_capability_misdirection: secret {sref!r} may not authenticate a "
+                           f"call to {action.get('resource')!r} "
+                           f"(authorized: {self._secret_destinations[sref]})")
+
         # 5. AG ceiling — AG computes it, PK/kernel enforces. AG fault ⇒ peripheral.
         #    Familiarity (Phase C): a DOMAIN-scoped action is gated on its EFFECTIVE band
         #    (base × familiarity) — stricter than base, so an unfamiliar/stale domain tightens
@@ -1048,6 +1093,23 @@ class GovernanceKernel:
             if isinstance(v, str) and v in _GOVERNANCE_FAILURE_CLASSES:
                 return "governance", v
         return "task", "task_failure"
+
+    def _floor_governance(self, action: Dict[str, Any], gclass: str,
+                          detail: Dict[str, Any]) -> None:
+        """Floor a capability for a must-never breach DETECTED at govern() time (e.g. a secret-
+        bearing call misdirected off its allowlist). The caller also returns deny — the attempt is
+        both blocked and floored. Records a five-class cause (severity_class=gclass) so the
+        replayability invariant holds: every floor resolves to an observed member of the five
+        classes. Best-effort; never raises (the deny stands regardless)."""
+        cc = action.get("capability_class", "default")
+        cause = {"trigger": "govern_breach", "classified": "bad", "severity": "governance",
+                 "severity_class": gclass, "satisfaction_source": "structural", **detail}
+        try:
+            self.ag.apply_outcome(cc, good=False, grounded=False, severity="governance",
+                                  cause=cause, now=self._domain_clock.now())
+            self._severity_hits[gclass] = self._severity_hits.get(gclass, 0) + 1
+        except Exception:
+            pass
 
     def severity_evidence(self) -> Dict[str, int]:
         """Per-class fire counts for the severity rules (this process). Usage evidence: a
