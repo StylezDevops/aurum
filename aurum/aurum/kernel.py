@@ -32,6 +32,19 @@ level control-flow integrity (CaMeL-style capability tracking on VALUES). The mo
 motivation is never traced — untrusted text that reaches the model's context WITHOUT crossing
 an ingest seam carries the operator default. The property therefore scales with SEAM COVERAGE:
 a new channel or tool inherits it only by routing through the cage seams.
+
+THE CONSTITUTIONAL INVARIANT (the observed/inferred boundary — also in the SIGNED surface):
+  "Constitutional breaches originate ONLY from observed world events belonging to the defined
+   must-never classes. No aggregation of epistemic signals — regardless of weight, count,
+   confidence, or duration — may synthesize a breach.
+   Observed breaches trigger floors. Inferred intent never does."
+Integrity signals (deception/concealment/authority-seeking/…) are a SEPARATE channel
+(record_integrity_signal → INTEGRITY_SIGNAL events) that feeds the learning organs and may raise
+scrutiny or accelerate demotion WITHIN a class already established by an observed event — but it
+can NEVER create a class or trigger a floor. _classify_failure is structurally blind to it (it
+takes no integrity-signal argument, on purpose: wiring one would be a conspicuous signature
+change, not a quiet line). An auditor can replay "secret crossed boundary"; it cannot replay
+"agent seemed hostile" — store facts, learn from interpretations, govern on facts.
 """
 # Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
@@ -133,6 +146,27 @@ _GOVERNANCE_FAILURE_CLASSES: frozenset = frozenset({
     "destructive_data_loss", "wrong_blast_radius_comms", "secret_capability_misdirection",
     "ledger_tamper_or_provenance_forge", "governance_enact_without_signature",
 })
+
+# INTEGRITY SIGNALS — epistemic evidence about the trajectory's RELATIONSHIP with governance.
+# A SEPARATE channel from the five floor classes: they feed the learning organs and may raise
+# scrutiny / accelerate demotion WITHIN an already-established class, but can NEVER synthesize a
+# breach or trigger a floor (the constitutional invariant). Deception is deliberately HERE, not a
+# sixth floor class — it is inferred intent, and flooring on it would mean flooring on
+# hallucinations and honest mistakes (the system flooring itself).
+_INTEGRITY_SIGNALS: frozenset = frozenset({
+    "contradiction_after_action", "concealment_attempt", "audit_evasion_attempt",
+    "authority_seeking_behavior", "rule_lawyering", "boundary_probing", "repeated_near_misses",
+})
+
+# Verbatim into the SIGNED constitutional surface (and the module docstring). The line that stands
+# in front of the most natural drift a learning organ can have: "this trajectory is hostile,
+# tighten the rules." Install it BEFORE LS ships rule-creation.
+_CONSTITUTIONAL_INVARIANT = (
+    "Constitutional breaches originate ONLY from observed world events belonging to the defined "
+    "must-never classes. No aggregation of epistemic signals — regardless of weight, count, "
+    "confidence, or duration — may synthesize a breach. Observed breaches trigger floors. "
+    "Inferred intent never does."
+)
 
 # Bound on the within-turn chain log (H2). new_turn() resets it at a turn boundary; this cap is a
 # defence for a LONG-LIVED host kernel that doesn't (the cage gets the reset free via process
@@ -264,6 +298,8 @@ class GovernanceKernel:
             "ag_dwell_seconds": self.ag.dwell_seconds,
             "ag_baseline": dict(self._ag_baseline),
             "governance_failure_classes": sorted(_GOVERNANCE_FAILURE_CLASSES),
+            "constitutional_invariant": _CONSTITUTIONAL_INVARIANT,
+            "integrity_signals_never_floor": sorted(_INTEGRITY_SIGNALS),
             "screen_block_threshold": self._screen_threshold,
             "pk_rules": self._rules,
         }
@@ -1216,6 +1252,34 @@ class GovernanceKernel:
                                     operator_key_id=key_id, verdict_id=vid)
         return {"promoted": bool(satisfied), "demoted": not satisfied, "verified": True,
                 "operator_key_id": key_id, "verdict_id": vid}
+
+    # -- integrity signals: a SEPARATE channel that NEVER floors (the constitutional invariant) --
+
+    def record_integrity_signal(self, signal: str,
+                                context: Optional[Dict[str, Any]] = None) -> None:
+        """Record an INTEGRITY SIGNAL — epistemic evidence about the trajectory's RELATIONSHIP with
+        governance (contradiction_after_action / concealment_attempt / audit_evasion_attempt /
+        authority_seeking_behavior / rule_lawyering / boundary_probing / repeated_near_misses).
+
+        This is a SEPARATE channel from the floor decision. It is written as an INTEGRITY_SIGNAL
+        event the learning organs (EG/BB/OI/AG/LS) read; it MAY raise scrutiny/sampling and
+        accelerate demotion WITHIN a class an OBSERVED five-class event already established — but it
+        can NEVER create a breach class or trigger a floor. _classify_failure is structurally blind
+        to it (takes no integrity-signal argument). Unknown signal → ignored (an unrecognised signal
+        must not be a back door into a floor). Best-effort; never raises.
+
+        Constitutional invariant: observed breaches trigger floors; inferred intent never does."""
+        if signal not in _INTEGRITY_SIGNALS:
+            return
+        try:
+            self.el.append({
+                "event_id": "", "timestamp": "", "source_organ": "GOV",
+                "action_type": "INTEGRITY_SIGNAL", "object_ids": [signal],
+                "payload": {"signal": signal, "context": dict(context or {})},
+                "evidence_confidence": 1.0, "evidence_source": "GOV",
+                "prev_hash": "", "hash": ""})
+        except Exception:
+            pass
 
     def why_authority(self, capability_class: str) -> Optional[Dict[str, Any]]:
         """Replay the WHY of the latest authority change for a class — reconstructed from the
