@@ -20,6 +20,13 @@ Requirements it must satisfy (each is tested):
   R5 FAIL CLOSED — a requested-but-disallowed mount raises `MountDenied` and aborts
      the whole run. We never silently drop a bad mount and proceed with the rest.
   R6 ABSOLUTE ONLY — relative sources are refused (their meaning depends on cwd).
+  R7 CONTAINMENT INVARIANT — no mount (structural OR extra) may expose a GOVERNANCE ROOT to the
+     container: Aurum runtime code, governance state, policy definitions, authority records,
+     identity keys, or ledger storage. Overlap in EITHER direction (mounting the governance root,
+     a parent that contains it, or a child inside it) is a CONTAINMENT FAILURE — an absolute deny
+     that OVERRIDES the allowlist. A governed agent must not be able to read or tamper the substrate
+     that governs it. (Dormant until `governance_roots` is supplied: v1 runs the kernel IN the cage
+     with state under the group mount — the known violation the host-side migration resolves.)
 
 Tamper note: the allowlist file is TRUSTED CONFIG and must live outside any
 agent-writable mount (e.g. a host-only config dir), so the caged agent cannot widen
@@ -48,6 +55,13 @@ EXTRA_MOUNT_BASE = "/workspace/extra"  # allowlisted host dirs, jailed under her
 
 class MountDenied(Exception):
     """A requested mount is not permitted. Raised to FAIL CLOSED (abort the run)."""
+
+
+class ContainmentError(MountDenied):
+    """CONTAINMENT INVARIANT violation (R7): a mount would expose a governance root (Aurum code /
+    governance state / policy / authority records / identity keys / ledger) to the container. A
+    subclass of MountDenied so it still fails closed, but a DISTINCT, loud failure — the substrate
+    that governs the agent must never be in the agent's filesystem."""
 
 
 @dataclass(frozen=True)
@@ -83,7 +97,8 @@ def _within(candidate_canon: str, base_canon: str) -> bool:
 class MountJail:
     """Validates host-dir mounts against an allowlist. Deny-by-default, fail-closed."""
 
-    def __init__(self, allowlist: List[str]) -> None:
+    def __init__(self, allowlist: List[str],
+                 governance_roots: List[str] | None = None) -> None:
         # Canonicalise allowlist entries once. A non-absolute entry is dropped
         # (it cannot be a trustworthy root); deny-by-default means a smaller
         # allowlist is the safe failure direction.
@@ -92,6 +107,21 @@ class MountJail:
             if not entry or not os.path.isabs(entry):
                 continue
             self._allow.append(_canon(entry))
+        # CONTAINMENT INVARIANT (R7): canonical governance roots no mount may overlap. Empty =>
+        # dormant (back-compat: v1's in-cage kernel + group-mounted state). Supplied by the host
+        # broker once governance moves off the container's filesystem (the migration).
+        self._governance_roots: List[str] = [
+            _canon(g) for g in (governance_roots or []) if g and os.path.isabs(g)
+        ]
+
+    def _overlaps_governance(self, candidate_canon: str) -> str | None:
+        """The offending governance root if `candidate_canon` OVERLAPS one in either direction
+        (it IS / is INSIDE a governance root, or it CONTAINS one), else None. Either direction
+        leaks the substrate: mounting governance, a parent that holds it, or a child within it."""
+        for gov in self._governance_roots:
+            if _within(candidate_canon, gov) or _within(gov, candidate_canon):
+                return gov
+        return None
 
     @property
     def allowlist(self) -> List[str]:
@@ -117,12 +147,21 @@ class MountJail:
             # Defence in depth — realpath would resolve this, but reject the obvious
             # traversal attempt outright rather than relying solely on resolution.
             raise MountDenied(f"path traversal not permitted in mount source: {host_path!r}")
+        canon = _canon(host_path)
+        # R7 CONTAINMENT INVARIANT — absolute deny that OVERRIDES the allowlist: an allowlisted dir
+        # that happens to expose a governance root is still a containment failure.
+        gov = self._overlaps_governance(canon)
+        if gov is not None:
+            raise ContainmentError(
+                f"CONTAINMENT FAILURE: mount source {host_path!r} overlaps the governance root "
+                f"{gov!r} — governance code/state/keys/ledger must never be visible to the container"
+            )
         if not self.is_allowed(host_path):
             raise MountDenied(
                 f"mount source {host_path!r} is not within the mount allowlist "
                 f"(deny-by-default). Allowed roots: {self._allow or '[]'}"
             )
-        return _canon(host_path)
+        return canon
 
     def build_mounts(
         self,
@@ -143,8 +182,20 @@ class MountJail:
         ]
         for name, host in (extras or {}).items():
             safe_name = os.path.basename(name.strip("/")) or name
-            canon = self.validate_extra(host)  # raises MountDenied if not allowed
+            canon = self.validate_extra(host)  # raises MountDenied / ContainmentError
             mounts.append(Mount(canon, f"{EXTRA_MOUNT_BASE}/{safe_name}", "ro"))
+        # R7 CONTAINMENT INVARIANT over the WHOLE set, structural mounts included: the group RW
+        # mount must not expose a governance root (it does in v1, when governance state lives under
+        # it — that overlap is the violation the host-side migration resolves; with governance_roots
+        # supplied post-migration, this fails closed before such a cage can ever start).
+        for m in mounts:
+            gov = self._overlaps_governance(m.host)
+            if gov is not None:
+                raise ContainmentError(
+                    f"CONTAINMENT FAILURE: mount {m.host!r} ({m.container}) exposes the governance "
+                    f"root {gov!r} to the container — relocate governance off the container's "
+                    f"filesystem (see the containment-invariant migration)"
+                )
         return mounts
 
     @staticmethod
@@ -174,6 +225,10 @@ def load_allowlist(path: str | None = None) -> List[str]:
     return [str(x) for x in data if isinstance(x, str) and x]
 
 
-def jail_from_file(path: str | None = None) -> MountJail:
-    """Construct a MountJail from the host allowlist file (deny-by-default)."""
-    return MountJail(load_allowlist(path))
+def jail_from_file(path: str | None = None,
+                   governance_roots: List[str] | None = None) -> MountJail:
+    """Construct a MountJail from the host allowlist file (deny-by-default). `governance_roots`
+    enables the R7 CONTAINMENT INVARIANT — supplied by the host broker once governance state lives
+    off the container's filesystem (the migration); omitted in v1 (dormant), since today's cage
+    runs the kernel in-container with state under the group mount."""
+    return MountJail(load_allowlist(path), governance_roots=governance_roots)

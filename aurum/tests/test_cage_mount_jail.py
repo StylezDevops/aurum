@@ -15,6 +15,7 @@ import pytest
 from aurum.cage.mount_jail import (
     MountJail,
     MountDenied,
+    ContainmentError,
     load_allowlist,
     PROJECT_MOUNT,
     GROUP_MOUNT,
@@ -115,3 +116,57 @@ def test_load_allowlist_deny_by_default_on_missing_or_bad_file(tmp_path):
     obj = tmp_path / "obj.json"
     obj.write_text('{"allow": ["/srv/c"]}', encoding="utf-8")
     assert load_allowlist(str(obj)) == ["/srv/c"]
+
+
+# ── R7 CONTAINMENT INVARIANT — no mount may expose a governance root ──────────────────────────
+
+def test_R7_governance_root_mount_is_denied_even_when_allowlisted():
+    # governance lives UNDER an allowlisted root; mounting it must still be a containment failure
+    # (the exclusion OVERRIDES the allowlist).
+    root = _mkdir()
+    gov = os.path.join(root, "governance")
+    os.makedirs(gov, exist_ok=True)
+    jail = MountJail([root], governance_roots=[gov])
+    with pytest.raises(ContainmentError):
+        jail.validate_extra(gov)
+
+
+def test_R7_parent_that_contains_governance_and_child_within_are_both_denied():
+    root = _mkdir()
+    gov = os.path.join(root, "gov")
+    inside = os.path.join(gov, "keys")
+    os.makedirs(inside, exist_ok=True)
+    jail = MountJail([root], governance_roots=[gov])
+    with pytest.raises(ContainmentError):
+        jail.validate_extra(root)            # mounting a PARENT that contains the governance root
+    with pytest.raises(ContainmentError):
+        jail.validate_extra(inside)          # mounting a CHILD inside the governance root
+
+
+def test_R7_build_mounts_fails_closed_when_the_group_mount_exposes_governance():
+    # the v1 violation made loud: governance state UNDER the group mount → build_mounts refuses to
+    # produce a cage that would expose it (this is what the host-side migration removes).
+    project, group = _mkdir(), _mkdir()
+    gov = os.path.join(group, ".hermes", "governance")
+    os.makedirs(gov, exist_ok=True)
+    jail = MountJail([], governance_roots=[gov])
+    with pytest.raises(ContainmentError):
+        jail.build_mounts(project, group)
+
+
+def test_R7_clean_layout_with_governance_off_the_mount_is_contained():
+    # post-migration shape: governance host-only, NOT under any mount → the cage builds cleanly.
+    project, group = _mkdir(), _mkdir()
+    gov = _mkdir()                           # a separate host-only root, not under group/project
+    jail = MountJail([], governance_roots=[gov])
+    mounts = jail.build_mounts(project, group)
+    assert {m.container for m in mounts} == {PROJECT_MOUNT, GROUP_MOUNT}
+
+
+def test_R7_dormant_without_governance_roots_is_back_compatible():
+    # v1 default (no governance_roots supplied): the exclusion is dormant — a governance-looking
+    # dir under the group mount still builds (today's cage), so this is non-breaking.
+    project, group = _mkdir(), _mkdir()
+    os.makedirs(os.path.join(group, ".hermes", "governance"), exist_ok=True)
+    mounts = MountJail([]).build_mounts(project, group)      # no governance_roots
+    assert any(m.container == GROUP_MOUNT for m in mounts)   # no ContainmentError raised
