@@ -9,10 +9,10 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.gr import GoalRegistry
-from aurum.durability.tcm import ToolCatalogManager
-from aurum.novel.aa import APIArchaeologist
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.goal_registry import GoalRegistry
+from aurum.durability.tool_catalog_manager import ToolCatalogManager
+from aurum.novel.api_archaeologist import APIArchaeologist
 
 
 def _el():

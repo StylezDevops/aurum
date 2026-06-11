@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 
 _PKG = pathlib.Path(__file__).resolve().parent.parent / "aurum"
 # self._<attr>._<priv> — an organ reaching into another object's private member.

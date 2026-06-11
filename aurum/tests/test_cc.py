@@ -7,8 +7,8 @@ import tempfile
 import pytest
 
 from aurum.build_state import is_built
-from aurum.durability.el import EvidenceLedger
-from aurum.observability.cc import ConcentrationCheck
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.observability.concentration_check import ConcentrationCheck
 
 
 def _el():

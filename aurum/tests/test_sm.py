@@ -2,7 +2,7 @@
 cross-substrate and unmapped-domain proposals pre-gate."""
 # Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from aurum.build_state import is_built
-from aurum.extensions.sm import SubstrateMapper
+from aurum.extensions.substrate_mapper import SubstrateMapper
 
 
 def test_substrate_per_domain():

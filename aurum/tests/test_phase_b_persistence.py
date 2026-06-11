@@ -18,7 +18,7 @@ import pytest
 
 from aurum.action_map import to_action
 from aurum.build_state import is_built
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 from aurum.kernel import GovernanceKernel
 
 pytestmark = pytest.mark.skipif(

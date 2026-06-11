@@ -39,10 +39,10 @@ from aurum.cseq import (  # noqa: E402
     INCENTIVE_STABLE, ConstitutionalStability, CostWeights, PathCost, RouteObservation,
 )
 from aurum.durability.clock import DAY  # noqa: E402
-from aurum.durability.el import EvidenceLedger  # noqa: E402
-from aurum.institutional.fc import ForcedContestability  # noqa: E402
-from aurum.novel.ag import AuthorityGovernor  # noqa: E402
-from aurum.novel.oi import OutcomeInterpreter  # noqa: E402
+from aurum.durability.evidence_ledger import EvidenceLedger  # noqa: E402
+from aurum.institutional.forced_contestability import ForcedContestability  # noqa: E402
+from aurum.novel.authority_governor import AuthorityGovernor  # noqa: E402
+from aurum.novel.outcome_interpreter import OutcomeInterpreter  # noqa: E402
 
 
 def _el() -> EvidenceLedger:

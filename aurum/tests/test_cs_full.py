@@ -12,7 +12,7 @@ import tempfile
 import pytest
 
 from aurum.base import Unbuilt
-from aurum.novel.cs import CausalSimulator
+from aurum.novel.causal_simulator import CausalSimulator
 
 
 def _cs():

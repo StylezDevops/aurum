@@ -6,9 +6,9 @@ import os
 
 from aurum.action_map import to_action
 from aurum.durability.clock import DomainClock
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 from aurum.kernel import GovernanceKernel
-from aurum.observability.cc import ConcentrationCheck
+from aurum.observability.concentration_check import ConcentrationCheck
 
 _IRREV = {"capability_class": "network", "action_class": "commit_outward",
           "risk_tier": "consequential", "irreversible": True}

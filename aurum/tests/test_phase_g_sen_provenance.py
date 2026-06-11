@@ -5,7 +5,7 @@ unit test. Operator-channel actions still proceed; a spoofed 'operator' source c
 from aurum.action_map import action_from_event, to_action
 from aurum.build_state import is_built
 from aurum.kernel import GovernanceKernel
-from aurum.support.sen import Sensorium
+from aurum.support.sensorium import Sensorium
 
 
 def test_kernel_owns_sensorium(tmp_path):

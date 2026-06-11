@@ -12,8 +12,8 @@ import tempfile
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
-from aurum.support.cb import CircuitBreaker
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.support.circuit_breaker import CircuitBreaker
 
 
 def _path(name="cb.db"):

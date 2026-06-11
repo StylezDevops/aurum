@@ -6,9 +6,9 @@ import tempfile
 
 import pytest
 
-from aurum.durability.pm import PreferenceModel
-from aurum.novel.cs import CausalSimulator
-from aurum.novel.ls import LivingSpecification
+from aurum.durability.preference_model import PreferenceModel
+from aurum.novel.causal_simulator import CausalSimulator
+from aurum.novel.living_specification import LivingSpecification
 
 DAY = 24 * 3600.0
 

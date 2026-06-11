@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from ..durability.clock import DAY
-from ..support.rs import ResourceScheduler
+from ..support.resource_scheduler import ResourceScheduler
 
 HOUR = 3600.0
 

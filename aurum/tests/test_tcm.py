@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.tcm import ToolCatalogManager
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.tool_catalog_manager import ToolCatalogManager
 
 
 def _tcm(**kw):

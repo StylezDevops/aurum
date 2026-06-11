@@ -12,8 +12,8 @@ from __future__ import annotations
 import os
 import tempfile
 
-from aurum.durability.el import EvidenceLedger
-from aurum.novel.ls import LivingSpecification
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.novel.living_specification import LivingSpecification
 
 DAY = 24 * 3600.0
 

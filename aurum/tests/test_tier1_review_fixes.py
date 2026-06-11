@@ -18,9 +18,9 @@ import tempfile
 import pytest
 
 from aurum.cage import broker as cb
-from aurum.durability.el import EvidenceLedger
-from aurum.novel.ag import AuthorityGovernor
-from aurum.spine.pk import PolicyKernel
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.novel.authority_governor import AuthorityGovernor
+from aurum.spine.policy_kernel import PolicyKernel
 
 
 def _el():

@@ -13,12 +13,12 @@ Authoritative spec: `aurum_organs_spec.md` (ships alongside this repo).
 Two organs ship as **reference implementations** (not stubs), so Opus has a
 concrete pattern to match:
 
-- **EL** (`aurum/durability/el.py`) — SQLite (WAL), DB-level append-only triggers
+- **EL** (`aurum/durability/evidence_ledger.py`) — SQLite (WAL), DB-level append-only triggers
   raising `AURUM_ERR_001`, a STORED generated column on `capability_class` for
   hot-path reads, recursive-CTE `lineage()`, application-level hash chain in
   `append()`/`verify_chain()`, fail-safe append, and a separate archive table so
   MGC compression never deletes from the live table.
-- **CS** (`aurum/novel/cs.py`) — a **separate** SQLite file from EL (EL is
+- **CS** (`aurum/novel/causal_simulator.py`) — a **separate** SQLite file from EL (EL is
   immutable/trigger-enforced; CS is mutable graph + leases — mixing them would
   break the append-only triggers). Graph nodes/edges, `whatif` blast-radius via
   recursive CTE, and TTL + heartbeat leases (a crashed holder's lease lapses so
@@ -105,7 +105,7 @@ No environment? `python3 verify_no_pytest.py` checks scaffold soundness with std
 >    fail to initialize if any live assertion fails.
 > 3. TYPES. Use the TypedDicts in `aurum/types.py` and strict hints throughout.
 >    Replace `raise Unbuilt(...)` bodies with real logic; keep the signatures.
-> 4. BACKGROUND ORGANS register with RS (`aurum/support/rs.py`) — never spin up raw
+> 4. BACKGROUND ORGANS register with RS (`aurum/support/resource_scheduler.py`) — never spin up raw
 >    unmanaged threads. RS is stubbed early so the interface exists from the start.
 > 5. SPINE. PK/BB/TS are mock stubs satisfying the named signatures and
 >    trust-tagging assumptions; deepen them as needed but preserve fail-closed posture.

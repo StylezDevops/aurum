@@ -20,9 +20,9 @@ import pytest
 
 from aurum.build_state import is_built
 from aurum.durability.clock import DomainClock
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 from aurum.kernel import GovernanceKernel
-from aurum.observability.mpd import MemoryPoisoningDetector
+from aurum.observability.memory_poisoning_detector import MemoryPoisoningDetector
 
 pytestmark = pytest.mark.skipif(
     not is_built("PK", "EL", "AG", "CA", "BB", "MPD", "OI", "TL"),

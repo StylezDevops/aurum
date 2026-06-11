@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from aurum.support.cg import CostGovernor, DEFAULT_TIERS
+from aurum.support.cost_governor import CostGovernor, DEFAULT_TIERS
 
 CHEAP = DEFAULT_TIERS[0]["model"]
 MID = DEFAULT_TIERS[1]["model"]

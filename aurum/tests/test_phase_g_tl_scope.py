@@ -5,7 +5,7 @@ TL is fed from the grounded outcome loop."""
 # Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from aurum.action_map import to_action
 from aurum.kernel import GovernanceKernel
-from aurum.support.tl import TrustLadder
+from aurum.support.trust_ladder import TrustLadder
 
 _IRREV = {"capability_class": "network", "action_class": "commit_outward",
           "risk_tier": "consequential", "irreversible": True}

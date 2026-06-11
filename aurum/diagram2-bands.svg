@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" width="600" height="320">
+  <style>
+    text { font-family: 'JetBrains Mono', 'Courier New', monospace; fill: #e0e0e0; }
+    .title { font-size: 14px; font-weight: bold; }
+    .sub { font-size: 12px; fill: #a0a0c0; }
+    .thresh { font-size: 11px; fill: #707090; }
+    .label { font-size: 11px; fill: #505070; }
+    line { stroke: #404058; stroke-width: 1; stroke-dasharray: 4 3; }
+  </style>
+
+  <rect x="0" y="0" width="600" height="320" fill="#0f0f1a" rx="12"/>
+
+  <!-- Full -->
+  <rect x="40" y="24" width="340" height="48" rx="7" fill="#0f2520" stroke="#207060" stroke-width="1.5"/>
+  <text class="title" x="58" y="45">Full</text>
+  <text class="sub" x="58" y="62">commit outward, edit docs, all capabilities</text>
+
+  <!-- thresholds Full -->
+  <line x1="388" y1="38" x2="430" y2="38"/>
+  <text class="thresh" x="436" y="42">promote ≥ 0.95</text>
+  <line x1="388" y1="58" x2="430" y2="58"/>
+  <text class="thresh" x="436" y="62">demote &lt; 0.90</text>
+
+  <!-- Code -->
+  <rect x="40" y="88" width="340" height="48" rx="7" fill="#15102a" stroke="#5050a0" stroke-width="1.5"/>
+  <text class="title" x="58" y="109">Code</text>
+  <text class="sub" x="58" y="126">gated edits, tool synthesis allowed</text>
+
+  <!-- thresholds Code -->
+  <line x1="388" y1="102" x2="430" y2="102"/>
+  <text class="thresh" x="436" y="106">promote ≥ 0.80</text>
+  <line x1="388" y1="122" x2="430" y2="122"/>
+  <text class="thresh" x="436" y="126">demote &lt; 0.70</text>
+
+  <!-- Read-only -->
+  <rect x="40" y="152" width="340" height="48" rx="7" fill="#201a08" stroke="#806020" stroke-width="1.5"/>
+  <text class="title" x="58" y="173">Read-only / propose</text>
+  <text class="sub" x="58" y="190">can suggest, cannot execute side effects</text>
+
+  <!-- Advisory -->
+  <rect x="40" y="216" width="340" height="48" rx="7" fill="#1a1a1a" stroke="#404040" stroke-width="1.5"/>
+  <text class="title" x="58" y="237">Advisory</text>
+  <text class="sub" x="58" y="254">the floor · authority never reaches zero</text>
+
+  <!-- Kinetics labels -->
+  <text x="16" y="108" text-anchor="middle" font-family="monospace" font-size="11" fill="#507050">↑</text>
+  <text x="16" y="122" text-anchor="middle" font-family="monospace" font-size="10" fill="#507050">slow</text>
+  <text x="16" y="200" text-anchor="middle" font-family="monospace" font-size="11" fill="#705050">↓</text>
+  <text x="16" y="214" text-anchor="middle" font-family="monospace" font-size="10" fill="#705050">fast</text>
+
+  <text class="label" x="300" y="310" text-anchor="middle">fig 2 — dual thresholds prevent authority flapping</text>
+</svg>

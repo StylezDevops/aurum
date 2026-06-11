@@ -5,7 +5,7 @@ most-conservative-wins, no model call, fully replayable); DD is asynchronous, re
 conflict log, and ESCALATES governance deadlock — it never self-resolves and never widens
 authority. Neither holds organ-level state beyond the conflict log they read/write.
 """
-from .ca import ArbitrationError, ConflictArbiter
-from .dd import DeadlockDetector
+from .conflict_arbiter import ArbitrationError, ConflictArbiter
+from .deadlock_detector import DeadlockDetector
 
 __all__ = ["ConflictArbiter", "ArbitrationError", "DeadlockDetector"]

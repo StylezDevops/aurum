@@ -7,6 +7,6 @@ demote-only (FC), or detect-and-fail-closed (CS-EQ, in ../cseq). CS-EQ ships in 
 here; CPD and MAA join here in later Phase-E checkpoints.
 """
 # Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
-from .fc import ForcedContestability, Scrutiny
+from .forced_contestability import ForcedContestability, Scrutiny
 
 __all__ = ["ForcedContestability", "Scrutiny"]

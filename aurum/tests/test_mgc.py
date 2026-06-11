@@ -6,10 +6,10 @@ import tempfile
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
-from aurum.durability.mgc import MemoryGarbageCollector
-from aurum.durability.tcm import ToolCatalogManager
-from aurum.novel.cs import CausalSimulator
+from aurum.durability.evidence_ledger import EvidenceLedger
+from aurum.durability.memory_garbage_collector import MemoryGarbageCollector
+from aurum.durability.tool_catalog_manager import ToolCatalogManager
+from aurum.novel.causal_simulator import CausalSimulator
 
 
 def _mgc(**kw):

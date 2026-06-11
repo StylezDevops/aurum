@@ -6,7 +6,7 @@ import time
 import pytest
 
 from aurum.build_state import is_built
-from aurum.spine.pk import (
+from aurum.spine.policy_kernel import (
     DeniedIntent, PolicyKernel, _taint_sig,
     _TAINT_SOURCES, _TAINT_SINKS,
 )

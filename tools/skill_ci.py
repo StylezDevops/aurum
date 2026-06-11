@@ -1,5 +1,5 @@
 # =============================================================================
-# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/pk.py (PK).
+# PRIOR ART / DONOR -- NOT CANONICAL. Canonical organ: aurum/aurum/spine/policy_kernel.py (PK).
 # Skill-CI is part of the PK spine. Still RUNS in the container today, but this is a
 # DONOR: migrate its logic INTO the scaffold PK organ; do NOT extend it here as if it
 # were the organ. build_state.BUILT['PK'] stays False until that organ is spec-complete.

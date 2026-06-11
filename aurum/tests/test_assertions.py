@@ -34,7 +34,7 @@ def test_AURUM_ERR_001_crypto_continuity():
     # Live once EL+CB are both built. EL half is implemented; the CB-lockout half
     # is wired when CB lands (replace the CB stub call below).
     import os, sqlite3, tempfile
-    from aurum.durability.el import EvidenceLedger
+    from aurum.durability.evidence_ledger import EvidenceLedger
 
     db = os.path.join(tempfile.mkdtemp(), "err001.db")
     el = EvidenceLedger(db)
@@ -64,7 +64,7 @@ def test_AURUM_ERR_001_crypto_continuity():
 
     # CB lockout half: a detected chain break must trip CB into emergency LOCKOUT,
     # and that lockout persists until a HUMAN_GATE reset (denials persist by intent).
-    from aurum.support.cb import CircuitBreaker
+    from aurum.support.circuit_breaker import CircuitBreaker
 
     cb = CircuitBreaker(os.path.join(tempfile.mkdtemp(), "cb001.db"), el=el)
     assert cb.state() == "closed"
@@ -84,8 +84,8 @@ def test_AURUM_ERR_002_lossless_snapshot():
     # LIVE (EL+MGC). Compressing an EL region copies cold rows to the archive but NEVER
     # deletes from the live ledger, so lineage() delta-count is identical afterwards.
     import os, tempfile
-    from aurum.durability.el import EvidenceLedger
-    from aurum.durability.mgc import MemoryGarbageCollector
+    from aurum.durability.evidence_ledger import EvidenceLedger
+    from aurum.durability.memory_garbage_collector import MemoryGarbageCollector
 
     el = EvidenceLedger(os.path.join(tempfile.mkdtemp(), "el.db"))
     ev = {"event_id": "", "timestamp": "", "source_organ": "TS",
@@ -104,8 +104,8 @@ def test_AURUM_ERR_003_ghost_dependency():
     _gate("AURUM_ERR_003")
     # LIVE (CS+MGC). A CS-leased artifact is skipped from MGC's sweep even with no edges.
     import os, tempfile
-    from aurum.novel.cs import CausalSimulator
-    from aurum.durability.mgc import MemoryGarbageCollector
+    from aurum.novel.causal_simulator import CausalSimulator
+    from aurum.durability.memory_garbage_collector import MemoryGarbageCollector
 
     cs = CausalSimulator(os.path.join(tempfile.mkdtemp(), "cs.db"))
     cs.add_node("tool_alpha", "tool")          # no referencing edges -> looks orphaned
@@ -121,7 +121,7 @@ def test_AURUM_ERR_004_constitutional_shield():
     # LIVE now (needs only LS). A revision targeting a CORE rule is rejected PRE-gate —
     # it must never become an applyable revision.
     import os, tempfile
-    from aurum.novel.ls import LivingSpecification
+    from aurum.novel.living_specification import LivingSpecification
 
     ls = LivingSpecification(os.path.join(tempfile.mkdtemp(), "ls.db"))
     core_id = ls.add_rule({"region": "core", "text": "never weaken guardrails"})
@@ -144,7 +144,7 @@ def test_AURUM_ERR_005_independence_decoupling():
     # models (gpt-5 + gpt-5-mini) must FAIL CLOSED on a min_families violation rather
     # than silently verifying with correlated verifiers.
     import pytest as _pytest
-    from aurum.novel.hvp import HeterogeneousVerifierPanel, HVPRoutingError
+    from aurum.novel.heterogeneous_verifier_panel import HeterogeneousVerifierPanel, HVPRoutingError
 
     hvp = HeterogeneousVerifierPanel()
     hvp.configure([
@@ -167,9 +167,9 @@ def test_AURUM_ERR_005_independence_decoupling():
 
 def test_AURUM_ERR_006_growth_isolation():
     _gate("AURUM_ERR_006")
-    from aurum.support.cb import CircuitBreaker
-    from aurum.spine.ts import Toolsmith
-    from aurum.durability.tcm import ToolCatalogManager
+    from aurum.support.circuit_breaker import CircuitBreaker
+    from aurum.spine.toolsmith import Toolsmith
+    from aurum.durability.tool_catalog_manager import ToolCatalogManager
 
     cb = CircuitBreaker()
     cb.freeze_growth("synth")
@@ -200,7 +200,7 @@ def test_AURUM_ERR_006_growth_isolation():
 
 def test_AURUM_ERR_007_semantic_privilege_escalation():
     _gate("AURUM_ERR_007")
-    from aurum.spine.pk import PolicyKernel
+    from aurum.spine.policy_kernel import PolicyKernel
 
     pk = PolicyKernel()
     # Each step alone passes PK.check (default allow, no rule denies them).
@@ -222,7 +222,7 @@ def test_AURUM_ERR_007_semantic_privilege_escalation():
 
 def test_AURUM_ERR_008_injection_boundary():
     _gate("AURUM_ERR_008")
-    from aurum.spine.pk import PolicyKernel
+    from aurum.spine.policy_kernel import PolicyKernel
 
     pk = PolicyKernel()
 
@@ -248,7 +248,7 @@ def test_AURUM_ERR_008_injection_boundary():
 
 def test_AURUM_ERR_009_refusal_persistence_padding_resistant():
     _gate("AURUM_ERR_009")
-    from aurum.spine.pk import PolicyKernel
+    from aurum.spine.policy_kernel import PolicyKernel
 
     pk = PolicyKernel()
     # Deny the original taint path.
@@ -281,7 +281,7 @@ def test_AURUM_ERR_010_authority_flapping():
     _gate("AURUM_ERR_010")
     # LIVE now (needs only AG). An authority oscillating 0.81/0.79/0.81/0.79 must hold
     # a STABLE band — dual promote(0.80)/demote(0.70) thresholds mean it never re-crosses.
-    from aurum.novel.ag import AuthorityGovernor
+    from aurum.novel.authority_governor import AuthorityGovernor
 
     ag = AuthorityGovernor(dwell_seconds=0.0)
     cc = "code_edit"
@@ -298,7 +298,7 @@ def test_AURUM_ERR_011_el_fail_safe():
     # LIVE now (needs only EL). A consequential action must not proceed if its
     # EL event cannot be logged. We model the action as gated on append().
     import os, tempfile
-    from aurum.durability.el import EvidenceLedger
+    from aurum.durability.evidence_ledger import EvidenceLedger
 
     db = os.path.join(tempfile.mkdtemp(), "err011.db")
     el = EvidenceLedger(db)
@@ -336,8 +336,8 @@ def test_AURUM_ERR_011_el_fail_safe():
 def test_AURUM_ERR_012_owner_absence():
     _gate("AURUM_ERR_012")
     import time
-    from aurum.spine.pk import PolicyKernel
-    from aurum.novel.ag import AuthorityGovernor
+    from aurum.spine.policy_kernel import PolicyKernel
+    from aurum.novel.authority_governor import AuthorityGovernor
 
     # PK: Class-B gate with a short TTL.
     pk = PolicyKernel(rules=[{
@@ -374,7 +374,7 @@ def test_AURUM_ERR_012_owner_absence():
 # --- arbitration layer (013-020) ------------------------------------------
 def _ca():
     import os, tempfile
-    from aurum.arbitration.ca import ConflictArbiter
+    from aurum.arbitration.conflict_arbiter import ConflictArbiter
     return ConflictArbiter(os.path.join(tempfile.mkdtemp(), "ca.db"))
 
 
@@ -414,7 +414,7 @@ def test_AURUM_ERR_014_caution_wins_logged():
 
 def test_AURUM_ERR_015_hard_layer_not_arbitrated():
     _gate("AURUM_ERR_015")
-    from aurum.arbitration.ca import ArbitrationError
+    from aurum.arbitration.conflict_arbiter import ArbitrationError
     ca = _ca()
     raised = False
     try:
@@ -436,7 +436,7 @@ def test_AURUM_ERR_016_silent_contraction_forbidden():
 
 def test_AURUM_ERR_017_wise_caution_vs_deadlock():
     _gate("AURUM_ERR_017")
-    from aurum.arbitration.dd import DeadlockDetector
+    from aurum.arbitration.deadlock_detector import DeadlockDetector
     # wise caution: justification stays elevated -> D below flag
     ca_wise = _ca()
     _seed_conflicts(ca_wise, [0.9] * 6)
@@ -450,7 +450,7 @@ def test_AURUM_ERR_017_wise_caution_vs_deadlock():
 
 def test_AURUM_ERR_018_constitutional_exclusion():
     _gate("AURUM_ERR_018")
-    from aurum.arbitration.dd import DeadlockDetector
+    from aurum.arbitration.deadlock_detector import DeadlockDetector
     ca = _ca()
     # justification abated (would look like deadlock) BUT winner is constitutional
     _seed_conflicts(ca, [0.9, 0.7, 0.5, 0.3, 0.1, 0.05], constitutional=True)
@@ -459,7 +459,7 @@ def test_AURUM_ERR_018_constitutional_exclusion():
 
 def test_AURUM_ERR_019_dd_never_self_resolves():
     _gate("AURUM_ERR_019")
-    from aurum.arbitration.dd import DeadlockDetector
+    from aurum.arbitration.deadlock_detector import DeadlockDetector
     dd = DeadlockDetector()
     raised = False
     try:
@@ -471,7 +471,7 @@ def test_AURUM_ERR_019_dd_never_self_resolves():
 
 def test_AURUM_ERR_020_escalation_dedup():
     _gate("AURUM_ERR_020")
-    from aurum.arbitration.dd import DeadlockDetector
+    from aurum.arbitration.deadlock_detector import DeadlockDetector
     ca = _ca()
     _seed_conflicts(ca, [0.9, 0.7, 0.5, 0.3, 0.1, 0.05])
     dd = DeadlockDetector(ca=ca)

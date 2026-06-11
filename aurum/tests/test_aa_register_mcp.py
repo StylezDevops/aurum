@@ -13,9 +13,9 @@ import tempfile
 
 import pytest
 
-from aurum.durability.el import EvidenceLedger
+from aurum.durability.evidence_ledger import EvidenceLedger
 from aurum.mcp import ENABLED, REGISTERED, McpRegistry, McpRegistryError, load_enabled_servers
-from aurum.novel.aa import APIArchaeologist
+from aurum.novel.api_archaeologist import APIArchaeologist
 
 
 def _el():

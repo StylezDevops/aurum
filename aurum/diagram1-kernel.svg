@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 380" width="600" height="380">
+  <style>
+    rect { fill: #1a1a2e; stroke: #4a4a6a; stroke-width: 1.5; rx: 8; }
+    text { font-family: 'JetBrains Mono', 'Courier New', monospace; fill: #e0e0e0; }
+    .title { font-size: 15px; font-weight: bold; }
+    .sub { font-size: 12px; fill: #a0a0c0; }
+    .label { font-size: 11px; fill: #707090; }
+    line { stroke: #4a4a6a; stroke-width: 1.5; }
+    polygon { fill: #4a4a6a; }
+  </style>
+
+  <rect x="0" y="0" width="600" height="380" fill="#0f0f1a" rx="12"/>
+
+  <!-- Human governance -->
+  <rect x="170" y="20" width="260" height="48" rx="8" fill="#1e1e30" stroke="#555575"/>
+  <text class="title" x="300" y="49" text-anchor="middle">Human governance</text>
+
+  <!-- Arrow 1 -->
+  <line x1="300" y1="68" x2="300" y2="98"/>
+  <polygon points="293,94 300,108 307,94"/>
+
+  <!-- PK -->
+  <rect x="60" y="108" width="480" height="72" rx="8" fill="#1a1a35" stroke="#6060a0"/>
+  <text class="title" x="300" y="133" text-anchor="middle">Policy Kernel (PK)</text>
+  <text class="sub" x="300" y="153" text-anchor="middle">May I act?</text>
+  <text class="sub" x="300" y="170" text-anchor="middle">Taint tracking · refusal persistence · injection guard</text>
+
+  <!-- Arrow 2 -->
+  <line x1="300" y1="180" x2="300" y2="210"/>
+  <polygon points="293,206 300,220 307,206"/>
+
+  <!-- EL -->
+  <rect x="60" y="220" width="480" height="72" rx="8" fill="#0f2020" stroke="#207060"/>
+  <text class="title" x="300" y="245" text-anchor="middle">Evidence Ledger (EL)</text>
+  <text class="sub" x="300" y="265" text-anchor="middle">On what evidence?</text>
+  <text class="sub" x="300" y="282" text-anchor="middle">Append-only hash chain · if it's not here, it didn't happen</text>
+
+  <!-- Arrow 3 -->
+  <line x1="300" y1="292" x2="300" y2="322"/>
+  <polygon points="293,318 300,332 307,318"/>
+
+  <!-- AG -->
+  <rect x="60" y="332" width="480" height="36" rx="8" fill="#201800" stroke="#806020"/>
+  <text class="title" x="300" y="355" text-anchor="middle">Authority Governor (AG) · live scalar · computes a ceiling · PK enforces it</text>
+
+  <!-- Caption -->
+  <text class="label" x="300" y="378" text-anchor="middle">fig 1 — every action flows through all three</text>
+</svg>
