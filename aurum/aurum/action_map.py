@@ -167,11 +167,18 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
     capability_class — engaging the AG familiarity factor when present.
     """
     args = args if isinstance(args, dict) else {}
+    # A STRUCTURAL must-never tag (credential_exfil / tenant_boundary / constitutional /
+    # data_destruction), declared in a tool's static classification — NOT inferred from a runtime
+    # result. When set, a BAD outcome on this action floors authority immediately (kernel
+    # _classify_failure / observe_outcome), vs a one-band task nudge. Trustworthy because it is a
+    # property of the tool's declaration, so a crafted proxy result cannot forge it (C2).
+    governance_class = None
     if classification:
         capability_class = classification.get("capability_class", "exec")
         action_class = classification.get("action_class", "code_edit")
         tier = classification.get("risk_tier", CONSEQUENTIAL)
         irreversible = bool(classification.get("irreversible"))
+        governance_class = classification.get("governance_class")
     elif tool_name in _TOOL_TABLE:
         capability_class, action_class, tier = _TOOL_TABLE[tool_name]
         irreversible = tool_name in _IRREVERSIBLE_TOOLS
@@ -194,6 +201,9 @@ def to_action(tool_name: str, args: Optional[Dict[str, Any]] = None,
         action["domain"] = domain
     if irreversible:
         action["irreversible"] = True   # highest-consequence: gated to the FULL band
+    if governance_class:
+        action["governance_class"] = governance_class   # structural must-never tag → floor on a
+        #                                                  bad outcome (C2), never from proxy text
     if operator_origin:
         action["origin"] = "operator"   # explicit operator-channel attribution (M2 tainted-turn)
     return action
