@@ -88,8 +88,13 @@ class GovernedHttpClient:
         gov_args = dict(body or {})
         gov_args["url"] = self.base_url + path
         gov_args["method"] = method
-        decision = self.kernel.govern(
-            to_action(tool, gov_args, classification=self._tool_classes.get(tool)))
+        act = to_action(tool, gov_args, classification=self._tool_classes.get(tool))
+        # Declare WHICH secret this call wields, so govern() can enforce the secret→destination
+        # binding (secret_capability_misdirection): a call wielding this secret to a destination
+        # outside its authorized allowlist is blocked + floored. Only when the call authenticates.
+        if auth and self._secret_ref:
+            act["secret_ref"] = self._secret_ref
+        decision = self.kernel.govern(act)
         if not decision.allow:
             return {"ok": False, "gated": True, "allowed": False,
                     "rule_id": decision.rule_id, "reason": decision.reason}
