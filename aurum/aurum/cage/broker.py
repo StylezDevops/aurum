@@ -246,6 +246,104 @@ async def docker_runner(
     return parsed
 
 
+# ── persistent container runner ──────────────────────────────────────────────
+# When AURUM_PERSISTENT_CONTAINER=1 the broker keeps ONE named container alive
+# and POSTs turns to its HTTP server (serve.py) instead of spawning --rm per turn.
+# This removes the ~10-20s Docker cold-start; hermes subprocess startup (~3-7s)
+# still applies per turn. The container is started automatically on first request.
+
+PERSISTENT_PORT = 8901
+PERSISTENT_CONTAINER_NAME = "aurum-agent-persistent"
+
+
+async def _persistent_healthy() -> bool:
+    try:
+        from aiohttp import ClientSession, ClientTimeout
+        async with ClientSession() as s:
+            async with s.get(
+                f"http://127.0.0.1:{PERSISTENT_PORT}/health",
+                timeout=ClientTimeout(total=2),
+            ) as r:
+                return r.status == 200
+    except Exception:
+        return False
+
+
+async def _ensure_persistent(project_dir: str, groups_root: str) -> None:
+    """Start the persistent container if it's not healthy. Idempotent."""
+    # Purge any stale/stopped container with the same name.
+    p = await asyncio.create_subprocess_exec(
+        "docker", "rm", "-f", PERSISTENT_CONTAINER_NAME,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await p.wait()
+
+    plain_env: Dict[str, str] = {
+        "ANTHROPIC_BASE_URL": os.environ.get("ANTHROPIC_BASE_URL", ""),
+        "ANTHROPIC_MODEL": os.environ.get("ANTHROPIC_MODEL", ""),
+    }
+    argv: List[str] = [
+        "docker", "run", "-d",
+        "--name", PERSISTENT_CONTAINER_NAME,
+        "-p", f"127.0.0.1:{PERSISTENT_PORT}:{PERSISTENT_PORT}",
+    ]
+    for k, v in plain_env.items():
+        if v:
+            argv += ["-e", f"{k}={v}"]
+    # Mount project dir (RO) and groups root (RW, all groups in one mount).
+    argv += [
+        "-v", f"{project_dir}:/workspace/project:ro",
+        "-v", f"{groups_root}:/workspace/groups",
+    ]
+    # Dockerfile: ENTRYPOINT ["python"], CMD ["/opt/aurum/entrypoint.py"]
+    # Overriding CMD to serve.py runs: python /opt/aurum/serve.py
+    argv += [CAGE_IMAGE, "/opt/aurum/serve.py"]
+
+    p2 = await asyncio.create_subprocess_exec(
+        *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await p2.wait()
+
+    # Wait up to 30s for the HTTP server to become ready.
+    for _ in range(30):
+        await asyncio.sleep(1)
+        if await _persistent_healthy():
+            return
+    raise RuntimeError(
+        f"aurum persistent container did not become healthy on :{PERSISTENT_PORT} after 30s"
+    )
+
+
+def make_persistent_runner(project_dir: str, groups_root: str) -> Runner:
+    """Return a Runner that routes turns to the long-lived persistent container."""
+    async def _run(
+        ci: Dict[str, Any], mount_args: List[str], plain_env: Dict[str, str]
+    ) -> Dict[str, Any]:
+        # mount_args / plain_env are built by handle_turn for the ephemeral case;
+        # we ignore mount_args (mounts are set at container start) and rebuild
+        # plain_env from the ambient env (same values, always consistent).
+        if not await _persistent_healthy():
+            await _ensure_persistent(project_dir, groups_root)
+        timeout = _turn_timeout()
+        try:
+            from aiohttp import ClientSession, ClientTimeout
+            async with ClientSession() as s:
+                async with s.post(
+                    f"http://127.0.0.1:{PERSISTENT_PORT}/turn",
+                    json=ci,
+                    timeout=ClientTimeout(total=timeout),
+                ) as r:
+                    return await r.json()
+        except asyncio.TimeoutError:
+            return {
+                "status": "error", "result": None,
+                "error": f"persistent turn exceeded {timeout:.0f}s timeout",
+            }
+        except Exception as exc:
+            return {"status": "error", "result": None, "error": f"persistent runner: {exc}"}
+    return _run
+
+
 # ── the broker ───────────────────────────────────────────────────────────────
 
 class CageBroker:
@@ -327,9 +425,18 @@ def make_app(broker: Optional[CageBroker] = None):
     the module (and its pure helpers/tests) don't require aiohttp."""
     from aiohttp import web
 
-    broker = broker or CageBroker()
     project_dir = os.environ.get("AURUM_PROJECT_DIR", os.getcwd())
-    groups_root = os.environ.get("AURUM_GROUPS_ROOT", os.path.join(os.path.expanduser("~"), ".aurum", "groups"))
+    groups_root = os.environ.get(
+        "AURUM_GROUPS_ROOT", os.path.join(os.path.expanduser("~"), ".aurum", "groups")
+    )
+    if broker is None:
+        use_persistent = os.environ.get("AURUM_PERSISTENT_CONTAINER", "").lower() in (
+            "1", "true", "yes"
+        )
+        runner: Runner = (
+            make_persistent_runner(project_dir, groups_root) if use_persistent else docker_runner
+        )
+        broker = CageBroker(runner=runner)
 
     async def chat_completions(request: "web.Request") -> "web.StreamResponse":
         if not broker.authorize(request.headers.get("Authorization")):
