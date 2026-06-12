@@ -8,7 +8,6 @@ Run AFTER `python scripts/gmail_consent.py` has written secrets/gmail_token.json
 
 This prints the extracted code (your own, short-lived). It only READS (gmail.readonly).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import argparse

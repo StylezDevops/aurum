@@ -4,7 +4,6 @@ Every maintenance task is optionally on/off and fired by the operator-chosen mec
 (turn / schedule / operator / event); SCHEDULE feeds RS; a failing task is isolated; the kernel
 factory wires the read-only maintenance organs with GOOD secure defaults and policy can override.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

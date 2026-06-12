@@ -18,7 +18,6 @@ role + resource scope + ttl) that OneCLI / the managed-identity provider turns i
 (JIT) token at request time — so `docker inspect` and the ledger stay clean. Fail-safe: an unknown
 band or an unbound capability class resolves to NO ACCESS (the narrowest possible), never broad.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict

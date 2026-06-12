@@ -10,7 +10,6 @@ The detector's findings now FEED BACK (the loop the MPD docstring originally def
 The uniform-confidence signature stays OWNER-REVIEW only (`scan()`): the spine's own
 decisions are legitimately all confidence 1.0, so it is never an automatic discount.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import os

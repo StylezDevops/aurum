@@ -33,7 +33,6 @@ Provenance posture (per-call, M2):
     A new tool/channel inherits the property only by routing through those seams. Full
     statement: kernel.py module docstring.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import uuid

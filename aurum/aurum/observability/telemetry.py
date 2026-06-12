@@ -16,7 +16,6 @@ Pulled forward per the build brief: "you need these to see the system behave." A
 None of this blocks an action or moves authority — observability ≠ control. It exists so drift,
 saturation, and over-/under-caution become visible BEFORE they become incidents.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from datetime import datetime

@@ -2,7 +2,6 @@
 required_tier is scope-gated by TL's EARNED tier ALONGSIDE AG's authority. A high tier can't
 rescue low authority (AG still gates); sufficient authority can't act below the earned scope.
 TL is fed from the grounded outcome loop."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.action_map import to_action
 from aurum.kernel import GovernanceKernel
 from aurum.support.trust_ladder import TrustLadder

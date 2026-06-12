@@ -1,7 +1,6 @@
 """SEN (Sensorium) — watchers wake the agent; ingested content is tagged untrusted and, end-to-end,
 is denied binding by PK's injection boundary (the real teeth of AURUM_ERR_008). A spoofed
 `operator` source must NOT escalate."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

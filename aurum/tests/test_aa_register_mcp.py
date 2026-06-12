@@ -5,7 +5,6 @@ The governed, EL-logged bridge from AA's synthesis to the durable MOUNT registry
 enabled servers to register this turn. A registered server is INERT until ENABLED (HUMAN_GATE);
 raw secrets are rejected; the spec is DATA, never instructions.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import os

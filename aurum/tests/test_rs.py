@@ -1,6 +1,5 @@
 """RS (Resource Scheduler) — foreground preempts background; goal-relevance orders; the aging
 guard means a perpetually-deferred low-priority job eventually runs rather than starving."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.build_state import is_built
 from aurum.support.resource_scheduler import ResourceScheduler
 

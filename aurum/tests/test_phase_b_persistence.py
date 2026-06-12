@@ -9,7 +9,6 @@ test_governance_kernel.py / test_ag.py; this asserts them together against the g
   4. authority is a PROJECTION of the append-only TRUST_CHANGE stream — never a stored mutable
      scalar — so it survives a --rm restart by replay, and a tampered ledger is not trusted.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from unittest import mock

@@ -4,7 +4,6 @@ The bridge that lets AA's synthesized tools reach the live MCP layer WITHOUT bak
 the ephemeral --rm container: tools are recorded in a durable, mount-resident registry and
 re-registered each turn. See aurum.mcp.registry.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from .registry import (
     DEPRECATED, ENABLED, MCP_REGISTRY_FILENAME, QUARANTINED, REGISTERED,
     McpRegistry, McpRegistryError, load_enabled_servers,

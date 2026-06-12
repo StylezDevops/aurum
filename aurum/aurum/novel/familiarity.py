@@ -31,7 +31,6 @@ competence the agent might have).
 familiarity curve to dodge the penalty. This module is PURE + a thread-safe in-memory projection;
 the durable source of truth is the grounded-outcome stream in the EL (rehydrated on boot).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import math

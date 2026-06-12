@@ -1,5 +1,4 @@
 """Phase D — GovernanceTelemetry: the day-one operational dashboard (read-only derived view)."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

@@ -8,7 +8,6 @@
 - CS-EQ: a -inf differential D is normalized (not written as non-standard JSON).
 - Gmail readers: an auth failure is SURFACED (last_error + log), not silently a phantom 'no mail'.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import os

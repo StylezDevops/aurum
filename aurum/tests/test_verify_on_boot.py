@@ -4,7 +4,6 @@ on boot, fail-closed-HARD on a mismatch — opt-in by ratifying (no manifest dep
 The cage holds only the PUBLIC key; only an out-of-band PRIVATE key (here, a test keypair) can
 ratify. A tampered surface (different CORE/rules) no longer boots silently.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import json

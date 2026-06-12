@@ -4,7 +4,6 @@ Economic Governance Pressure Differential + equilibrium taxonomy + integrity pro
 external constitutional manifest, plus the ConstitutionalStability recorder's safety properties
 (detect-and-fail-closed, NO authority/gate write path, leg-2 equilibrium claim deferred).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import os

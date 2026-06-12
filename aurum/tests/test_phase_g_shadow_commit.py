@@ -2,7 +2,6 @@
 action is governed, a SIDE-EFFECT-FREE preview is run, and the real commit fires only on a clean
 preview. A gated action never previews/commits; a failing preview blocks the commit and the real
 outward op never fires (the H2 containment property)."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.action_map import to_action
 from aurum.durability.clock import DomainClock
 from aurum.kernel import GovernanceKernel

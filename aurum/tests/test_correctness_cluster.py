@@ -2,7 +2,6 @@
 a proxy result), H1 (in-memory authority can't diverge from EL on a failed append), M1 (a denied
 action doesn't pollute the within-turn taint chain), H2 (the chain log is bounded).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

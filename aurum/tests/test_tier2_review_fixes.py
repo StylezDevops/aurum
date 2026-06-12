@@ -9,7 +9,6 @@
 - LS shields a PROTECTED rule from proposal; a no-op reweight (no new_weight) is rejected.
 - The heuristic screener no longer HOT-taints on a benign weak signal ('New task: …').
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import os

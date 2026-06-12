@@ -1,7 +1,6 @@
 """Phase G(e) — RS + CC wired into the kernel: background organ work is scheduled through RS
 (foreground preempts; aging guards starvation), and CC surfaces the concentration systemic-risk
 signal (the MGC do-not-retire / TCM harden-or-split feed) over the live EL."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.kernel import GovernanceKernel
 from aurum.observability.concentration_check import ConcentrationCheck
 from aurum.support.resource_scheduler import ResourceScheduler

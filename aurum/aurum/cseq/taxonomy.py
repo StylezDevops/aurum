@@ -11,7 +11,6 @@ A mature constitution wants both, so bypass discovery degrades from "breach" to 
 know which regime you are in, observe what the agent does when an ungoverned route is available
 (or would do, via an integrity probe — see probe.py).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -15,7 +15,6 @@ key=value secrets, long opaque high-entropy runs). Semantic redaction is explici
 the hot path (it cannot be done at the latency SLO) — see the holdout "cheap-or-external"
 discipline in the runtime-integrity reference §4.3.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from typing import Any

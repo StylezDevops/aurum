@@ -1,7 +1,6 @@
 """Review fixes (from the full code review): H1 TL persists across --rm; M1 new_turn resets
 per-turn state; M2 tainted-turn blocks un-attributed irreversible actions; L3 RS aging is a
 safety net (priority respected until starvation); L4 CC recency window."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 import os
 
 from aurum.action_map import to_action

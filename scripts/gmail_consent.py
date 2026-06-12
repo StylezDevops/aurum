@@ -14,7 +14,6 @@ Prereqs:
   production") — a Testing-mode app's refresh token expires in ~7 days (that is what killed the
   pipeline's old token). You'll click through an "unverified app" screen as the owner; that's fine.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import argparse

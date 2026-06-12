@@ -25,7 +25,6 @@ The cap cannot weaken the floor: a screener only ESCALATES taint, so a hit hidin
 merely forgoes escalation while the base provenance taint still applies. A perf regression test
 (test_injection_screen) holds this linearity the way the 068 test holds redaction's.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import json

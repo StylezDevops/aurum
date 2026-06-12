@@ -12,7 +12,6 @@ AG is READ-ONLY over its inputs and never grants — it computes a ceiling that 
 `observe()` is the per-cycle update tick; `set_authority()` is the kinetics-free primitive it
 builds on (and the substrate for the hysteresis tests). Authority changes are logged to EL.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple, TypedDict

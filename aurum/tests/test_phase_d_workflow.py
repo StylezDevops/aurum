@@ -5,7 +5,6 @@ The reversible steps proceed; the IRREVERSIBLE delete is gated to the FULL band 
 shadow mode, leaves the record intact. Earning top authority unlocks it — proving the gate was
 the only thing holding it. This is the proven-useful-workload-under-the-control-plane claim.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

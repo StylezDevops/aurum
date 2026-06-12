@@ -2,7 +2,6 @@
 key=value, bare opaque tokens) WITHOUT redacting id/hash-shaped runs (uuids, digests) — so the
 leak is closed without the uuid regression that would break replay/lineage join keys.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

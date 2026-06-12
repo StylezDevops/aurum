@@ -1,6 +1,5 @@
 """SH (Shadow Mode) — simulate runs the real action against a copy (no side effects); commit is
 gated by an 'ok' verdict and consumes it (no replay)."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.build_state import is_built
 from aurum.support.shadow_mode import ShadowMode
 

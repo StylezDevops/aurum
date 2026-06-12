@@ -13,7 +13,6 @@ are platform-injected per request and never resident in the cage, so a "real" co
 deployment concern; the GOVERNANCE being exercised here is the real thing. Gated execution IS
 shadow mode — a wrong/over-authority action is observed and contained, never damaging.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import threading

@@ -3,7 +3,6 @@
 The integration / AURUM_ERR_029/032/038 assertions live in test_phase_c_familiarity.py; this
 file pins the maths and the concurrency/longevity properties in isolation.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import math

@@ -21,7 +21,6 @@ FAILS CLOSED (yields nothing, so it cannot teach a working shortcut), it is gove
 (never a real backdoor), and its frequency/placement is CONSTITUTIONAL (human-gated, never
 agent-tunable). A single take is noise; the SIGNAL is the rate/trend over many probes.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import uuid

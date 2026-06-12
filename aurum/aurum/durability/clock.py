@@ -14,7 +14,6 @@ Repo-wide convention: time-dependent LOGIC takes `now` as input (Domain Time) an
 time.time()/datetime.now() inside the logic; anything that BLOCKS or times out uses
 execution_now() (real monotonic). Clock injection applies ONLY to Domain Time.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import math

@@ -7,7 +7,6 @@ forward-secure ratcheted MAC, GIL-safe split hash, Domain-vs-Execution clocks, l
 redaction. Each is unconditionally live (the mechanisms ship with this change); test names carry
 the AURUM_ERR id so `pytest -v` prints each one.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import os

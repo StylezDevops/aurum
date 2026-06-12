@@ -6,7 +6,6 @@ HOT taint (blocks ALL non-operator consequential actions that turn). The structu
 regardless — a failing screener abstains, and a benign turn keeps the base M2 (irreversible-only)
 guard. Reads stay allowed (process the hostile content); operator-attributed actions still run.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import time

@@ -1,6 +1,5 @@
 """SM (Substrate Mapper) — scopes self-improvement to the right substrate per domain; rejects
 cross-substrate and unmapped-domain proposals pre-gate."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.build_state import is_built
 from aurum.extensions.substrate_mapper import SubstrateMapper
 

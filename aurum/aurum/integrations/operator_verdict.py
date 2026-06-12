@@ -18,7 +18,6 @@ Real asymmetric signatures (ed25519). NEVER HMAC — a symmetric key in the cage
 verdicts, defeating the point. The signature covers the verdict BY VALUE (capability_class, task,
 satisfied, …), so a verdict can only promote what it names and cannot be edited after signing.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import hashlib

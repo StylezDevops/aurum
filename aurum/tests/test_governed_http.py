@@ -1,7 +1,6 @@
 """GovernedHttpClient (public framework primitive): safe reads pass; an irreversible/outward call
 is gated to the full band (shadow-contained) until authority is earned, then actually sent.
 Domain-free — uses a generic tool set, no instance/label specifics."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

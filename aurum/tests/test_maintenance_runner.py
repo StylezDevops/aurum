@@ -5,7 +5,6 @@ testable without real waiting via injected now/sleep/stop); the cage calls kerne
 opportunistically. Interval gating must hold ACROSS calls (the scheduler is cached), and every
 path is fail-safe.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import importlib.util

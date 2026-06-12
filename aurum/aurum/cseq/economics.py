@@ -22,7 +22,6 @@ alternative is a money-pit that never pays out. The differential:
              mathematical signature of an exploitable bypass — the dispatch bypass closed in
              PR#39 had p_u>0 AND C_u<C_g, i.e. D<0 — detectable BEFORE behavioural capture).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import math

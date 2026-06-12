@@ -9,7 +9,6 @@ lazily too, so `import aurum.sensors` works without them and the test suite need
 inject a fake Gmail service). Fail-safe: any API error yields an empty list (retry next wake),
 never a crash.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import base64

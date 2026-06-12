@@ -17,7 +17,6 @@ promotes (kernel.submit_operator_verdict), recording WHICH operator by value in 
 The agent can never run this (it has no private key) — it can only PROPOSE an outcome for
 confirmation. The signature binds the verdict BY VALUE, so it can only promote what it names.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import argparse

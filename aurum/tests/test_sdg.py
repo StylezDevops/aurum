@@ -1,6 +1,5 @@
 """SDG (Skill Dependency Graph) — patching a skill re-runs the goldens of its transitive
 dependents; promotion is blocked on any red (incl. transitive)."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 import pytest
 
 from aurum.build_state import is_built

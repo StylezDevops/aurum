@@ -5,6 +5,9 @@
 __pycache__/
 .venv/
 
+# Claude Code instructions — install-specific, never tracked
+CLAUDE.md
+
 # Internal reference / planning docs — us-only, never tracked
 aurum_organs_spec.md
 aurum_arbitration_spec.md

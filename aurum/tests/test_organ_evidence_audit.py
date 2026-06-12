@@ -3,7 +3,6 @@ earn-complexity-or-experimental-wall decision: FIRED (changed an outcome in live
 INSTRUMENTED (emits, never load-bearing) vs SILENT (zero ledger presence). Driven end-to-end:
 a REAL kernel produces the ledger, the audit classifies it, and read-only is enforced.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import importlib.util

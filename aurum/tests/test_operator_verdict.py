@@ -3,7 +3,6 @@ EXPANDS authority — v1 is automatic contraction, human-grounded/SIGNED expansi
 attributable BY VALUE (authority↑ because verdict V signed by operator K), unsigned/rogue/replayed
 verdicts never expand authority, and a demote is honoured even unsigned (contraction is safe).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

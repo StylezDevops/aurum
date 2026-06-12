@@ -3,7 +3,6 @@
 Tests the extractor, the IMAP reader (against a FAKE mailbox — no live creds), and the
 event-driven watcher (check_once + a BOUNDED wait_for_code that never blocks for real).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from typing import List

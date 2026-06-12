@@ -6,7 +6,6 @@ candidate. The second-order loop surfaces a 'must never' breach class that RECUR
 governance — "why isn't the pre-hoc gate stopping this?" — for owner review (never auto-creates
 a rule, since v1 LS is subtraction-only).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import os

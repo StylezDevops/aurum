@@ -5,7 +5,6 @@ god-access); access grows monotonically with the band; delete is permitted only 
 band; and a hard ceiling forbids privilege-escalation roles and subscription-wide scopes at
 ANY band. The kernel resolves a class's LIVE band, so demoting authority tightens the grant.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import pytest

@@ -2,7 +2,6 @@
 dead because the kernel passed now=None. The dwell gates rapid BAND re-crossing only; the
 authority SCALAR is never dwell-gated. The kernel now threads its domain clock into apply_outcome.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 from aurum.novel.authority_governor import AuthorityGovernor

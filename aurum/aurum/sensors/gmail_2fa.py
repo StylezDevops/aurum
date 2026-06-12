@@ -15,7 +15,6 @@ durable path is IMAP + app-password (no OAuth 7-day-testing-token death — the 
 OAuth token probed DEAD/invalid_grant, confirming that fragility). The IMAP connection is
 INJECTABLE so the capture logic is fully testable without a live mailbox.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import email

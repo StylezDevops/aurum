@@ -1,7 +1,6 @@
 """Phase G(a) — SEN provenance flows into the live govern() path: an action DRIVEN BY ingested
 content is denied binding by PK's injection boundary (AURUM_ERR_008) at RUNTIME, not just in a
 unit test. Operator-channel actions still proceed; a spoofed 'operator' source cannot escalate."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.action_map import action_from_event, to_action
 from aurum.build_state import is_built
 from aurum.kernel import GovernanceKernel

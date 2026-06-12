@@ -21,7 +21,6 @@ REMOTE-FIRST: an HTTP MCP (url + secret_ref) has nothing to install, so it sides
 entirely — the pipeline API is exactly this case. Local stdio servers must be baked into the
 image, then merely registered here.
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import json

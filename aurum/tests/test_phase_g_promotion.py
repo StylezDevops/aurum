@@ -1,7 +1,6 @@
 """Phase G(d) — SM + SDG wired into the self-improvement pre-promotion gate: a proposal is scoped
 to the domain's substrate (cross-/unmapped rejected pre-gate), then a skill promotion re-runs the
 transitive dependents' goldens (blocked on any red). A cleared proposal still faces the HUMAN_GATE."""
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from aurum.action_map import to_action
 from aurum.extensions.skill_dependency_graph import SkillDependencyGraph
 from aurum.extensions.substrate_mapper import SubstrateMapper

@@ -10,7 +10,6 @@ could not serialize CROSS-PROCESS writers anyway (the host maintenance loop and 
 cage kernel share the mounted el.db). The fix serializes inside append itself: a per-instance
 lock (threads) + a BEGIN IMMEDIATE transaction on a dedicated chain connection (processes).
 """
-# Author: Daniel Styles <me0wc0w73@gmail.com>
 from __future__ import annotations
 
 import threading
