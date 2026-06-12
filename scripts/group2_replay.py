@@ -23,7 +23,6 @@ the difference between "prove the mechanism" (here) and "calibrate the threshold
 Run:  python scripts/group2_replay.py
 The scenario functions return plain dicts and are asserted by tests/test_group2_harness.py.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import os

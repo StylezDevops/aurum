@@ -1,6 +1,5 @@
 """Phase F — GmailApiReader (OAuth/Gmail-API path): same interface as the IMAP reader, drops into
 the watcher; tested against a FAKE Gmail service (no live creds, no google libs needed)."""
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import base64

@@ -37,7 +37,6 @@ IMMEDIATE transaction (insert only if the current tip still equals the prev_hash
 conflict re-read and retry). For the current single-process design the queue is simpler and
 sufficient; the CAS path is documented so the migration is known.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import queue

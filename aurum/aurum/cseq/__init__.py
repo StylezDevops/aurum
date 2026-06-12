@@ -22,7 +22,6 @@ or PK rules (assert by construction AND test). On a constitutional-class inciden
 closed HARD (the one place the response is maximal, because the thing that failed is the thing
 everything else rests on) and escalates — it never weakens anything in response.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import math

@@ -13,7 +13,6 @@ organ tasks) runs in one of two places:
 Run:  python scripts/governance_maintenance.py [--interval SECONDS] [--once]
 State root: AURUM_STATE_ROOT → HERMES_HOME → ~/.hermes (same resolution as the plugin).
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import argparse

@@ -16,7 +16,6 @@ tool, run by a human on a trusted machine, can.
 After ratifying, the next kernel boot recomputes the surface hash and fails CLOSED-HARD if it
 doesn't match the signed manifest. Re-run this tool whenever a constitutional change is approved.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import argparse

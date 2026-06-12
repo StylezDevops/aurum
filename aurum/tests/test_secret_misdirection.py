@@ -5,7 +5,6 @@ to an off-allowlist destination is BLOCKED (the leak) and FLOORS authority (the 
 breach — a compromised credential is rotated, never recovered). Enforced kernel-side, so it holds on
 ANY platform including open egress.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import pytest

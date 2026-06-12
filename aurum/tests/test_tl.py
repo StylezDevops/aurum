@@ -1,6 +1,5 @@
 """TL (Trust Ladder) — earned autonomy: grounded-only tier-up capped at the ceiling, immediate
 tier-down, HUMAN_GATE past the ceiling, and can() as a pure tier check (scope, not authority)."""
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 import pytest
 
 from aurum.build_state import is_built

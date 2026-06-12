@@ -6,7 +6,6 @@ widen authority, weaken a gate, or relax arbitration — detect-and-escalate (CP
 demote-only (FC), or detect-and-fail-closed (CS-EQ, in ../cseq). CS-EQ ships in aurum.cseq; FC
 here; CPD and MAA join here in later Phase-E checkpoints.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from .forced_contestability import ForcedContestability, Scrutiny
 
 __all__ = ["ForcedContestability", "Scrutiny"]

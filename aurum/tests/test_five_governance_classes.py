@@ -2,7 +2,6 @@
 a STRUCTURAL governance_class tag on the action — never from proxy result text — and the set ships
 in the SIGNED constitutional surface (the agent can read, not shorten/extend).
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import pytest

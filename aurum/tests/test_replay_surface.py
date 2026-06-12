@@ -4,7 +4,6 @@ state. A future auditor reconstructs the decision (what / why / which authority 
 organ / which evidence) from the decision row alone. The score is a compression; this is the
 evidence behind it (governance provenance / institutional memory).
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import pytest

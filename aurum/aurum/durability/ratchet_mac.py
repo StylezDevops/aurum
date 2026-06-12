@@ -18,7 +18,6 @@ compromise. It does NOT make a live-compromised agent's NEW writes trustworthy (
 holds the current key and ratchets forward normally). Preventing compromise is the cage's job;
 this makes history unforgeable-after-the-fact. Two distinct guarantees.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import hashlib

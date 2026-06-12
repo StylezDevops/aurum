@@ -32,7 +32,6 @@ Tamper note: the allowlist file is TRUSTED CONFIG and must live outside any
 agent-writable mount (e.g. a host-only config dir), so the caged agent cannot widen
 its own access by editing it. `load_allowlist` only reads it; it never writes.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import json

@@ -20,7 +20,6 @@ This is NOT the Agent Orchestrator (AO, deferred): no multi-agent coordination, 
 gate writes. It only decides WHEN the already-built, already-gated maintenance organs run, and a
 task that raises is isolated (logged into its result, never crashes the loop).
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import time

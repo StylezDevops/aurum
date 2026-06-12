@@ -4,7 +4,6 @@ NEVER auto-apply a threshold/weight change — a self-tuning loss function optim
 fires least", the opposite of the declared direction. Evidence finds the optimum; it never chooses
 the loss function.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import pytest

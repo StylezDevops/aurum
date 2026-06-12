@@ -5,7 +5,6 @@ holds the EL ledger, authority projection, BB, OI, the MCP registry, etc. Both t
 and the host maintenance runner resolve it HERE so they can never diverge (a split would write/read
 governance state to two different roots).
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import os

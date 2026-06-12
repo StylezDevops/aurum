@@ -19,7 +19,6 @@ Usage:
   python scripts/organ_evidence_audit.py <el.db> [<el.db> ...]   # e.g. groups/*/.hermes/governance/el.db
   python scripts/organ_evidence_audit.py --json <el.db>          # machine-readable
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import argparse

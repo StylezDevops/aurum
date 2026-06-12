@@ -23,7 +23,6 @@ nothing — quiet ≠ broken). FC has NO authority-WIDENING path by construction
 authority-side handle is a DEMOTE-only callback; it holds no AuthorityGovernor reference and
 exposes no method that raises authority. Constitutional params are human-gated (DD pattern).
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -4,7 +4,6 @@ Loads scripts/group2_replay.py and asserts every Group-2 mechanism is demonstrat
 on a deterministic scenario, AND that the harness stays honest: it proves MECHANISM, never
 calibration (CS-EQ still returns claim='deferred'; AG environment is recorded, not scored).
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import importlib.util

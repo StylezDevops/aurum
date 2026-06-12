@@ -46,7 +46,6 @@ takes no integrity-signal argument, on purpose: wiring one would be a conspicuou
 change, not a quiet line). An auditor can replay "secret crossed boundary"; it cannot replay
 "agent seemed hostile" — store facts, learn from interpretations, govern on facts.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import hashlib

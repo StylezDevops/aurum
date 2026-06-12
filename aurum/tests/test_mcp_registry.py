@@ -1,6 +1,5 @@
 """Phase F1 — mount-resident MCP registry: register-not-install, secret-by-reference,
 register≠enable (HUMAN_GATE), conditional injection, atomic durable persistence."""
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import json

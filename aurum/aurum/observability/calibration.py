@@ -21,7 +21,6 @@ Calibration requires REAL accumulated ledger data; until enough has accrued, eac
 reports `insufficient_evidence` and the human-gated seed stands. An under-evidenced recalibration is
 worse than an honest seed — so this never fabricates one from thin data.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 from typing import Any, Dict

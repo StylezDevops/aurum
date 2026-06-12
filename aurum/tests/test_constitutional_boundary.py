@@ -3,7 +3,6 @@ that feeds the learning organs but can NEVER synthesize a breach or trigger a fl
 observed member of the five must-never classes floors. This is the line that stands in front of the
 most natural drift a learning organ can have ("this trajectory is hostile, tighten the rules").
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import inspect

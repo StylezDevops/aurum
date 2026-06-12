@@ -5,7 +5,6 @@ by KVE validity and per-volatility time-decay; recovery via gated human-grounded
 proxy never counts. Driven through the real kernel (PK→AG→CA→EL + KVE + familiarity) with an
 injected DomainClock so decay is deterministic and fast-forwardable with no real waiting.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import pytest

@@ -4,7 +4,6 @@ A workflow NEVER touches the world directly: every step is cleared by Governance
 first (write-then-act), and a denied/gated step is observed-and-contained, not executed —
 gated execution is shadow mode by construction.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from .dataverse_contact import GovernedWorkflow, ShadowDataverse, StepResult, WorkflowResult
 
 __all__ = ["GovernedWorkflow", "ShadowDataverse", "StepResult", "WorkflowResult"]

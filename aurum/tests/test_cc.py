@@ -1,6 +1,5 @@
 """CC (Concentration Check) — read-only view over EL: usage-distribution shares + systemic-risk
 flags for over-concentrated artifacts. Never blocks, never writes."""
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 import os
 import tempfile
 

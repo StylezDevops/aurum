@@ -4,7 +4,6 @@ Inverted scrutiny for the irreversible class (scrutiny rises with authority), pe
 re-justification of elite pathways (observe on, evaluate evidence-gated, failed re-justification
 reuses the existing graduated demotion), and the by-construction no-authority-widening guarantee.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import os

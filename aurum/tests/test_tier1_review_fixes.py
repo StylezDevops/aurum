@@ -8,7 +8,6 @@
 - AG restore_authority reconstructs the EARNED band (no silent downgrade of gap-resting values).
 - Cage broker: a turn timeout is enforced and the container is reaped; argv supports a name.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import asyncio

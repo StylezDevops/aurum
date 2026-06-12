@@ -15,7 +15,6 @@ A concrete instance (e.g. a label's release pipeline) subclasses this with its `
 `base_url`, and tool classification + convenience methods — that subclass is *instance* code and
 lives in the private layer, not here.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import json

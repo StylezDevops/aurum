@@ -14,7 +14,6 @@ with the external key; next boot verifies.
 Real asymmetric signatures (ed25519). NEVER HMAC — HMAC is symmetric, so the cage would hold the
 secret and could forge its own manifest, defeating the entire point.
 """
-# Author: StylezDevops <94297031+StylezDevops@users.noreply.github.com>
 from __future__ import annotations
 
 import hashlib
