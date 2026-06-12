@@ -41,7 +41,7 @@ RUN touch README.md
 # pytest is added so Skill-CI (tools/skill_ci.py) can run a skill's tests in a
 # hardened subprocess before promotion (validate-before-promote). util-linux
 # provides `unshare` for best-effort network isolation of those test runs.
-RUN pip install -e . pytest==9.0.2
+RUN pip install -e . pytest==9.0.2 aiohttp==3.13.3
 
 # The governance organs live at /opt/hermes/aurum/aurum (the `aurum.aurum.*` package).
 # `pip install -e .` only exposes Hermes' OWN declared packages, not this nested tree,
@@ -56,8 +56,18 @@ RUN mkdir -p /home/node && chmod 0777 /home/node
 
 # stdin ContainerInput  ->  hermes -q  ->  sentinel-wrapped ContainerOutput.
 COPY container/aurum/entrypoint.py /opt/aurum/entrypoint.py
+# Persistent turn server: POST /turn -> hermes -q -> ContainerOutput JSON.
+# Started by the broker when AURUM_PERSISTENT_CONTAINER=1 (docker run -d ... serve.py).
+COPY container/aurum/serve.py /opt/aurum/serve.py
 # Aurum constitution (identity + always-on guardrails). The entrypoint seeds it
 # into each group's HERMES_HOME/SOUL.md on first run, substituting ASSISTANT_NAME.
 COPY container/aurum/SOUL.md /opt/aurum/SOUL.md
 
-ENTRYPOINT ["python", "/opt/aurum/entrypoint.py"]
+# Expose the persistent turn server port (used when broker runs the container long-lived).
+EXPOSE 8901
+
+# Split python + script so `docker run IMAGE /opt/aurum/serve.py` overrides only
+# the script (CMD), not the interpreter (ENTRYPOINT). Ephemeral mode (default CMD)
+# runs entrypoint.py; persistent mode overrides CMD to serve.py.
+ENTRYPOINT ["python"]
+CMD ["/opt/aurum/entrypoint.py"]

@@ -19,6 +19,8 @@ This translates that contract to a single-shot `hermes -q` call and back. Verifi
 Hermes contract (docs/hermes-io-contract.md): in --quiet mode stdout is the answer
 text followed by a trailing `session_id: <id>` line; API errors print on the answer
 line and the process still exits 0, so we detect error-shaped text.
+
+`run_turn(inp, group_dir)` is also imported by serve.py (persistent container mode).
 """
 import json
 import os
@@ -34,13 +36,26 @@ START = "---AURUM_OUTPUT_START---"
 END = "---AURUM_OUTPUT_END---"
 HERMES_CLI = "/opt/hermes/cli.py"
 GROUP_DIR = "/workspace/group"
-# Persist Hermes session/state under the per-group RW mount so --resume works
-# across the ephemeral `docker run --rm` (the cage's persistence rule).
-HERMES_HOME = os.path.join(GROUP_DIR, ".hermes")
 # Canonical Aurum constitution shipped in the image (see Dockerfile COPY).
 SOUL_TEMPLATE = "/opt/aurum/SOUL.md"
 
 _ERROR_PREFIXES = ("Error code:", "API call failed", "Error:")
+
+def _load_session_map(hermes_home: str) -> dict:
+    """Load the gateway→hermes session ID map from HERMES_HOME."""
+    try:
+        with open(os.path.join(hermes_home, "session_map.json"), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_session_map(hermes_home: str, m: dict) -> None:
+    try:
+        with open(os.path.join(hermes_home, "session_map.json"), "w", encoding="utf-8") as f:
+            json.dump(m, f, indent=2)
+    except OSError:
+        pass  # non-fatal
 
 
 def emit(output: dict) -> None:
@@ -145,24 +160,23 @@ def _prepare_mcp_servers(hermes_home: str, group: str) -> None:
         pass  # non-fatal: the MCP layer simply registers nothing extra this turn
 
 
-def main() -> int:
-    try:
-        inp = json.loads(sys.stdin.read() or "{}")
-    except Exception as exc:  # malformed input — report, don't crash
-        emit({"status": "error", "result": None, "error": "bad input json: %s" % exc})
-        return 0
+def run_turn(inp: dict, group_dir: str = GROUP_DIR) -> dict:
+    """Run one Hermes turn and return a ContainerOutput dict.
+
+    Extracted so serve.py (persistent container mode) can call it without the
+    stdin/stdout wrapper. group_dir defaults to the single-group legacy mount;
+    serve.py passes the per-group path under /workspace/groups/{folder}.
+    """
+    hermes_home = os.path.join(group_dir, ".hermes")
 
     prompt = inp.get("prompt", "") or ""
     session_id = inp.get("sessionId")
-    # Secrets arrive on stdin (never via docker -e), so they stay out of
-    # `docker inspect`. Injected into the in-container env for hermes + tools below.
     secrets = inp.get("secrets") or {}
 
-    os.makedirs(HERMES_HOME, exist_ok=True)
-    _seed_soul(HERMES_HOME, inp.get("assistantName"))
-    _ensure_plugin_enabled(HERMES_HOME, "aurum-governance")
-    # Load-from-mount: stage the MCP servers ENABLED for this group (register-not-install).
-    _prepare_mcp_servers(HERMES_HOME, str(inp.get("groupFolder") or ""))
+    os.makedirs(hermes_home, exist_ok=True)
+    _seed_soul(hermes_home, inp.get("assistantName"))
+    _ensure_plugin_enabled(hermes_home, "aurum-governance")
+    _prepare_mcp_servers(hermes_home, str(inp.get("groupFolder") or ""))
 
     cmd = [sys.executable, HERMES_CLI, "-q", prompt, "--provider", "openrouter", "--quiet"]
     base_url = os.environ.get("ANTHROPIC_BASE_URL")
@@ -176,53 +190,38 @@ def main() -> int:
         cmd += ["--api-key", api_key]
     if model:
         cmd += ["--model", model]
-    if session_id:
-        cmd += ["--resume", session_id]
+    session_map = _load_session_map(hermes_home)
+    hermes_session = session_map.get(session_id) if session_id else None
+    if hermes_session:
+        cmd += ["--resume", hermes_session]
 
     env = dict(os.environ)
-    # Inject stdin-brokered secrets into the runtime env (NOT visible in docker
-    # inspect, which only shows the `-e` config set at `docker run`).
     for _k, _v in secrets.items():
         if _v:
             env[str(_k)] = str(_v)
-    env["HERMES_HOME"] = HERMES_HOME
+    if api_key and not env.get("OPENROUTER_API_KEY"):
+        env["OPENROUTER_API_KEY"] = api_key
+    env["HERMES_HOME"] = hermes_home
     env["HERMES_INTERACTIVE"] = "0"
-    # Secure-by-default in the cage: scan self-authored skills on every write
-    # (Policy Kernel / skills_guard). A persisted skill can detonate later, so
-    # unlike stock Hermes we do not leave this opt-in. See skill_manager_tool
-    # ._guard_agent_created_enabled.
     env["AURUM_GUARD_SKILLS"] = "1"
-    # Validate-before-promote: run a skill's tests in a hardened subprocess on
-    # write (Skill-CI / Regression Guard). See tools/skill_ci.py.
     env["AURUM_SKILL_CI"] = "1"
-    # Offer the Toolsmith (propose_tool) in the cage. It can only stage a scanned,
-    # sandbox-tested proposal for human review — never activate a tool. See
-    # tools/toolsmith.py.
     env["AURUM_TOOLSMITH"] = "1"
-    # Route every tool call through the governance spine (PK → AG → CA → EL) before it
-    # executes, via the aurum-governance pre_tool_call hook. Fail-closed: blocks on policy
-    # deny, gate, or governance fault. See plugins/aurum-governance + aurum.kernel.
     env["AURUM_GOVERNANCE"] = "1"
 
-    cwd = GROUP_DIR if os.path.isdir(GROUP_DIR) else "/opt/hermes"
-    # No timeout here — the cage owns the wall-clock timeout and kills the container.
+    cwd = group_dir if os.path.isdir(group_dir) else "/opt/hermes"
     try:
         proc = subprocess.run(
             cmd, input="", capture_output=True, text=True, cwd=cwd, env=env
         )
     except Exception as exc:
-        emit({"status": "error", "result": None, "error": "hermes spawn failed: %s" % exc})
-        return 0
+        return {"status": "error", "result": None, "error": "hermes spawn failed: %s" % exc}
 
-    # Hermes prints `session_id: <id>` to STDERR (verified), the answer to STDOUT.
     new_session = None
     for stream in (proc.stderr or "", proc.stdout or ""):
         for line in stream.split("\n"):
             if line.startswith("session_id:"):
                 new_session = line.split("session_id:", 1)[1].strip()
 
-    # Build the answer from stdout, dropping Hermes' own noise lines (e.g. the
-    # `⚠ tirith security scanner …` notice and any stray session_id line).
     answer_lines = []
     for raw in (proc.stdout or "").rstrip("\n").split("\n"):
         line = _ANSI.sub("", raw)
@@ -235,16 +234,28 @@ def main() -> int:
         answer_lines.append(line)
     answer = "\n".join(answer_lines).strip()
 
+    if session_id and new_session:
+        session_map[session_id] = new_session
+        _save_session_map(hermes_home, session_map)
+
     is_error = answer.startswith(_ERROR_PREFIXES) or (not answer and proc.returncode != 0)
     if is_error:
-        emit({
+        return {
             "status": "error",
             "result": None,
             "error": answer or (proc.stderr or "")[-500:] or "hermes produced no output",
             "newSessionId": new_session,
-        })
-    else:
-        emit({"status": "success", "result": answer, "newSessionId": new_session})
+        }
+    return {"status": "success", "result": answer, "newSessionId": new_session}
+
+
+def main() -> int:
+    try:
+        inp = json.loads(sys.stdin.read() or "{}")
+    except Exception as exc:
+        emit({"status": "error", "result": None, "error": "bad input json: %s" % exc})
+        return 0
+    emit(run_turn(inp))
     return 0
 
 

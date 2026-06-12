@@ -40,9 +40,9 @@ def _generate_key(out_dir: str) -> int:
     priv = Ed25519PrivateKey.generate()
     priv_pem = priv.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
     pub_pem = priv.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
-    with open(os.path.join(out_dir, "operator_priv.pem"), "wb") as fh:
+    with open(os.path.join(out_dir, "operator_priv.pem"), "wb") as fh:  # windows-footgun: ok
         fh.write(priv_pem)
-    with open(os.path.join(out_dir, "operator_pubkey.pem"), "wb") as fh:
+    with open(os.path.join(out_dir, "operator_pubkey.pem"), "wb") as fh:  # windows-footgun: ok
         fh.write(pub_pem)
     print(f"wrote {out_dir}/operator_priv.pem (KEEP OUT OF THE CAGE) and operator_pubkey.pem")
     print("Deploy ONLY operator_pubkey.pem into <state_root>/governance/operator_pubkeys/.")
