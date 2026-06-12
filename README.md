@@ -32,23 +32,28 @@ Current build status — commit by commit — is tracked in **[`progress.md`](./
 Channels (Telegram / Gmail / …) ── thin secure launcher (host)
       │  message → group resolved → mount-allowlist consulted (tamper-proof)
       ▼
-  docker run --rm   (ephemeral, host UID, least-privilege mounts)
-      │  RO project · RW per-group state · allowlisted host dirs only
+  cage broker (port 8900, OpenAI-compatible SSE)
+      │  ephemeral:   docker run --rm  per turn  (default: AURUM_PERSISTENT_CONTAINER=0)
+      │  persistent:  one named container, HTTP socket  (AURUM_PERSISTENT_CONTAINER=1, ~4s/turn)
       ▼
-  [cage]  Hermes brain  — skills · tools · MCP · cron · subagents
+  [container]  Hermes brain  — skills · tools · MCP · cron · subagents
       │  + Aurum's governance organs (see the spine below)
       ▼
-  secrets injected per-request over the gateway — the container never holds keys
+  secrets injected per-request via stdin/HTTP body — the container never holds keys
 ```
 
-- The **hard containment boundary** is the cage: a `--rm` container holding no long-lived
-  secrets, with controlled egress and an allowlist as the *only* place host-folder access is
-  granted. Everything Aurum does to itself happens inside it.
+- The **hard containment boundary** is the cage: a container holding no long-lived secrets,
+  with controlled egress and an allowlist as the *only* place host-folder access is granted.
+  Everything Aurum does to itself happens inside it.
+- **Two container modes:** ephemeral (`--rm` per turn, maximum isolation) and persistent (one
+  named container reused across turns via an HTTP turn server, ~4s per turn after first start).
+  Both modes keep the same security posture — secrets travel in the request body, never in
+  `docker inspect` or env vars.
 - **Containment scales with autonomy** — plain Docker shares the host kernel, so as the agent
   is trusted to run less-supervised the cage tightens toward rootless/microVM/kernel-isolation.
   More authority granted ⇒ stronger isolation required.
 - Per-group state (memory, learned skills, postmortems, compression state) persists on the
-  host across the ephemeral container so nothing is lost when it exits.
+  host across container restarts so nothing is lost when a container exits.
 
 ---
 
@@ -72,30 +77,35 @@ Absence shrinks the agent, never grows it.
 The architecture is organised into tiers. **Tier 0 (the spine) is built and tested**; the
 rest is the active roadmap.
 
-### ✅ Built — Tier 0 spine
+### ✅ Built
 
 | Organ | What it does | Guardrail |
 |-------|--------------|-----------|
+| **Cage broker** | Per-request or persistent container isolation; OpenAI-compatible SSE bridge | Mount-allowlist jail (deny-by-default); secrets via stdin/HTTP body, never env; fail-closed on missing secret or denied mount |
 | **Constitution** (`SOUL.md`) | Identity + always-on directives, seeded per-group | Lean; references guardrails rather than inlining them |
-| **Policy Kernel** | Skill-content security scanning | Supply-chain defenses: `.skillignore` can't hide test/exec code; an AST check flags code that runs at import time; secure-by-default in the cage |
-| **Skill-CI / Regression Guard** | Validate-before-promote | Fail-closed: never runs a skill the scanner flagged; tests run in a hardened, secret-scrubbed, network-dropped sandbox |
+| **Evidence Ledger** | Hash-chained append-only decision log; every governance event is replayable | Tamper-evident (HMAC chain); redaction preserves chain integrity; foundation every other organ writes to |
+| **Policy Kernel** | Skill-content security scanning | Supply-chain defenses: `.skillignore` can't hide test/exec code; AST flags import-time payloads; secure-by-default |
+| **Skill-CI / Regression Guard** | Validate-before-promote | Fail-closed: never runs a flagged skill; tests run in a hardened, secret-scrubbed, network-dropped sandbox |
 | **Black Box** | Failure → structured postmortem → skill | Redacted on-disk corpus; feeds the learning loop; never hot-path |
 | **Toolsmith** | The agent authors real tools | Propose → scan → sandbox-test → **staged for human review; never auto-activated** |
-| **Memory + compression** | On by default, per-group | Native engine (no flaky external dependency); persists across `--rm` |
+| **Authority Governor** | Live trust dial — authority rises slowly, falls fast | Outcome-gated promotion (signed operator verdict required); automatic contraction on proxy failure |
+| **Five governance classes** | Must-never actions encoded at the kernel level | Checked before every tool call; fail-closed; lineage-safe redaction |
+| **Constitutional boundary** | Integrity signals can never floor (observed ≠ inferred) | Prevents the agent from reasoning its own constraints away |
+| **Containment Invariant** | Mount-allowlist enforced in MountJail on every turn | No host-folder access outside the allowlist, ever; deny-by-default |
+| **Memory + compression** | On by default, per-group | Native engine; persists across container restarts |
 
 ### 🧭 Designed — the roadmap
 
 The governance-first organs that make the headline claim, grouped by tier:
 
-- **Tier 0.5 — durability & scaling:** Evidence Ledger (hash-chained, replayable decision
-  provenance — built first; nearly everything logs here), Reproducibility Runner, Memory
-  Garbage Collector, Knowledge Validity Engine (stored knowledge expires), Goal Registry,
-  Preference Model, Tool Capability Manager.
+- **Tier 0.5 — durability & scaling:** Reproducibility Runner, Memory Garbage Collector,
+  Knowledge Validity Engine (stored knowledge expires), Goal Registry, Preference Model,
+  Tool Capability Manager.
 - **Tier 1 — novel core:** API Archaeologist (gap → discover API → synthesise tool,
   extension-first), Living Specification (gated self-rewrite of the constitution),
   Heterogeneous Verifier Panel (cross-model checking), Epistemic Governor (reroute before
-  errors compound), Causal Simulator (counterfactuals over its own state), Authority Governor
-  (live trust dial), Outcome Interpreter (completion ≠ satisfaction).
+  errors compound), Causal Simulator (counterfactuals over its own state),
+  Outcome Interpreter (completion ≠ satisfaction).
 - **Tier 2–4:** cross-domain extensions, known support patterns (Trust Ladder, Circuit
   Breaker, Shadow Mode, Cost Governor, Resource Scheduler, Sensorium), observability monitors
   (identity-drift, memory-poisoning, concentration), and deferred multi-agent orchestration.
@@ -168,10 +178,13 @@ On Windows, install the underlying Hermes runtime with the PowerShell installer:
 | Path | Purpose |
 |------|---------|
 | [`progress.md`](./progress.md) | Current build status, commit-by-commit |
-| `container/aurum/` | Cage entrypoint, Dockerfile, and the seeded `SOUL.md` |
+| `aurum/aurum/` | The governance spine — all organs (`cage/`, `spine/`, `durability/`, `novel/`, `observability/`, `sensors/`, `integrations/`, …) |
+| `aurum/tests/test_*` | Tests for every built organ (run from `aurum/` with pytest) |
+| `container/aurum/` | Cage image — `entrypoint.py` (single-shot), `serve.py` (persistent HTTP server), `Dockerfile`, `SOUL.md` |
+| `aurum/aurum/cage/broker.py` | Cage broker — OpenAI-compatible SSE endpoint; ephemeral or persistent runner |
 | `tools/skills_guard.py`, `tools/skill_ci.py`, `tools/toolsmith.py` | Policy Kernel · Skill-CI · Toolsmith |
 | `agent/black_box.py` | Black Box postmortem store |
-| `tests/test_*` | Tests for every built organ |
+| `scripts/start-aurum.ps1`, `scripts/stop-aurum.ps1` | Windows host launcher / teardown |
 
 ---
 
